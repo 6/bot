@@ -1,16 +1,28 @@
 name: Remote Repo Write
-run-name: remote-repo-write ${{ github.event.client_payload.request_id }}
+run-name: remote-repo-write ${{ inputs.request_id }}
 
 permissions:
   contents: read
   actions: read
 
 on:
-  repository_dispatch:
-    types: [repo_write]
+  workflow_dispatch:
+    inputs:
+      request_id:
+        description: Unique request identifier for tracking
+        required: true
+        type: string
+      source_repo:
+        description: Source repository (owner/name) — used for concurrency grouping
+        required: true
+        type: string
+      payload:
+        description: Full JSON request payload from source repo
+        required: true
+        type: string
 
 concurrency:
-  group: remote-repo-write-${{ github.event.client_payload.source_repo }}
+  group: remote-repo-write-${{ inputs.source_repo }}
   cancel-in-progress: false
 
 jobs:
@@ -32,16 +44,22 @@ jobs:
       - name: Resolve request
         id: request
         shell: bash
+        env:
+          INPUT_PAYLOAD: ${{ inputs.payload }}
+          INPUT_SOURCE_REPO: ${{ inputs.source_repo }}
         run: |
           python3 - <<'PY' >> "$GITHUB_OUTPUT"
           import json
           import os
+          import sys
 
-          with open(os.environ["GITHUB_EVENT_PATH"]) as f:
-              event = json.load(f)
-
-          payload = event["client_payload"]
+          payload = json.loads(os.environ["INPUT_PAYLOAD"])
           source_repo = payload["source_repo"]
+
+          if source_repo != os.environ["INPUT_SOURCE_REPO"]:
+              print("::error::payload source_repo does not match workflow input", file=sys.stderr)
+              sys.exit(1)
+
           source_owner, source_name = source_repo.split("/", 1)
 
           outputs = {

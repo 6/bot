@@ -21,7 +21,7 @@ This repo does **not** own target-repo orchestration. Each target repo decides:
 ## Mental Model
 
 - `6/bot` is a **generic executor**, not a reusable workflow library for repo-specific CI.
-- Target repos dispatch work into `6/bot` using `repository_dispatch`.
+- Target repos dispatch work into `6/bot` using `workflow_dispatch`.
 - `6/bot` checks that the source repo is explicitly allowlisted, then checks out the target repo at the requested SHA and either runs the selected backend or performs a generic write request with credentials that live only here.
 - Target repos may expose an optional `.github/actions/bot-setup/action.yml` hook for language/toolchain setup. That hook runs inside the target repo checkout, so only allow trusted repos and trusted refs.
 - The remote agent writes runtime artifacts and a patch. The calling repo downloads those artifacts and applies the patch locally.
@@ -33,6 +33,8 @@ This repo is public by design, but it is meant to be tightly controlled:
 - pull requests and issues should stay disabled
 - `main` is the only branch intended for normal operation
 - all model secrets stay in this repo, never in target repos
+- workflows are triggered via `workflow_dispatch`, which requires `Actions: write` on `6/bot` — a narrower grant than `Contents: write` needed by `repository_dispatch`
+- source repos use a dedicated `BOT_CONTROL_REPO_TOKEN` scoped to `6/bot` with `Actions: write` only
 - only explicitly allowlisted source repos may dispatch work here
 - only branch/tag refs are accepted; `refs/pull/*` is rejected
 - the requested `target_sha` must still match the trusted ref contract for the requested operation
@@ -40,6 +42,7 @@ This repo is public by design, but it is meant to be tightly controlled:
 Important:
 - allowlisting a repo means you trust its checked-out code to run under this control plane
 - target repos must gate dispatch on their own side too; `6/bot` is a second line of defense, not the first
+- the `BOT_CONTROL_REPO_TOKEN` should be scoped only to `6/bot` with `Actions: write`; do not grant `Contents: write`
 
 Trusted ref modes:
 - remote agent execution may target a trusted branch/tag ref and run at the requested SHA
@@ -76,10 +79,10 @@ Notes:
 
 ### `remote-agent.yml`
 
-Triggered by `repository_dispatch` with event type `run_agent`.
+Triggered by `workflow_dispatch` with inputs `request_id`, `source_repo`, and `payload` (JSON).
 
 High-level flow:
-1. Parse the dispatch payload.
+1. Parse the JSON payload from the `payload` input.
 2. Check the source repo against `config/allowlist.toml`.
 3. Reject non-`6/*` repos, non-branch/tag refs, and PR refs.
 4. Mint a read-only GitHub App token for the source repo.
@@ -93,10 +96,10 @@ High-level flow:
 
 ### `remote-repo-write.yml`
 
-Triggered by `repository_dispatch` with event type `repo_write`.
+Triggered by `workflow_dispatch` with inputs `request_id`, `source_repo`, and `payload` (JSON).
 
 High-level flow:
-1. Parse the dispatch payload.
+1. Parse the JSON payload from the `payload` input.
 2. Check the source repo against `config/allowlist.toml`.
 3. Reject non-`6/*` repos, non-branch/tag refs, and PR refs.
 4. Mint a GitHub App token for the source repo with the write permissions needed by the requested operations.
@@ -167,7 +170,7 @@ The target repo should keep its own orchestration and use `6/bot` only for privi
 Minimum integration pieces:
 
 1. A workflow or action in the target repo that decides when a remote agent run is allowed.
-2. A dispatch step that sends a `repository_dispatch` request to `6/bot`.
+2. A dispatch step that calls the `workflow_dispatch` API on `6/bot` using a `BOT_CONTROL_REPO_TOKEN` scoped to `6/bot` with `Actions: write`.
 3. An input artifact containing at least:
    - `final-task.md`
    - optionally `task.md`
@@ -176,7 +179,19 @@ Minimum integration pieces:
 
 If the target repo also wants `6/bot` to own privileged publish/mutation steps, add a second bridge for repo-write requests instead of doing those writes locally.
 
-The calling repo should send a payload with:
+### Dispatch inputs
+
+Both workflows accept three `workflow_dispatch` inputs:
+
+| Input | Description |
+|-------|-------------|
+| `request_id` | Unique identifier for tracking (appears in run name) |
+| `source_repo` | `owner/name` — must match the value inside `payload` |
+| `payload` | JSON string containing the full request payload |
+
+### Agent payload fields
+
+The `payload` JSON for `remote-agent.yml` should contain:
 - `request_id`
 - `source_repo`
 - `source_run_id`
@@ -191,7 +206,9 @@ The calling repo should send a payload with:
 - optional `setup_profile`
 - optional `setup_config_json`
 
-Repo-write payloads should send:
+### Repo-write payload fields
+
+The `payload` JSON for `remote-repo-write.yml` should contain:
 - `request_id`
 - `source_repo`
 - `source_run_id`
@@ -229,6 +246,7 @@ When integrating a new repo:
 - keep all model secrets in `6/bot`
 - keep repo-specific prompts, setup, trust policy, and verification in the target repo
 - keep repo-specific publish policy in the target repo, even if `6/bot` executes the final privileged mutation
+- use a `BOT_CONTROL_REPO_TOKEN` secret scoped to `6/bot` with `Actions: write` only — never `Contents: write`
 - gate dispatch on trusted refs before contacting `6/bot`
 - avoid dispatching PR head refs from untrusted forks
 - prefer slash-command or maintainer-only triggers over broad public comment triggers
