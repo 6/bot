@@ -1,0 +1,138 @@
+name: Remote Repo Write
+run-name: remote-repo-write ${{ github.event.client_payload.request_id }}
+
+permissions:
+  contents: read
+  actions: read
+
+on:
+  repository_dispatch:
+    types: [repo_write]
+
+jobs:
+  run:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          path: .bot
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Resolve request
+        id: request
+        shell: bash
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          import os
+
+          with open(os.environ["GITHUB_EVENT_PATH"]) as f:
+              event = json.load(f)
+
+          payload = event["client_payload"]
+          source_repo = payload["source_repo"]
+          source_owner, source_name = source_repo.split("/", 1)
+
+          outputs = {
+              "request_id": payload["request_id"],
+              "source_repo": source_repo,
+              "source_owner": source_owner,
+              "source_name": source_name,
+              "source_run_id": str(payload["source_run_id"]),
+              "input_artifact": payload["input_artifact"],
+              "output_artifact": payload["output_artifact"],
+              "target_sha": payload["target_sha"],
+              "target_ref": payload["target_ref"],
+          }
+          for key, value in outputs.items():
+              print(f"{key}={value}")
+          PY
+
+      - name: Validate source repo and target ref
+        shell: bash
+        run: |
+          uv run --project .bot python -m bot.allowlist check-repo "${{ steps.request.outputs.source_repo }}"
+
+          if [ "${{ steps.request.outputs.source_owner }}" != "6" ]; then
+            echo "::error::6/bot only accepts dispatches for repositories owned by 6"
+            exit 1
+          fi
+
+          case "${{ steps.request.outputs.target_ref }}" in
+            refs/heads/*|refs/tags/*) ;;
+            *)
+              echo "::error::target_ref must be a refs/heads/* or refs/tags/* ref"
+              exit 1
+              ;;
+          esac
+
+          case "${{ steps.request.outputs.target_ref }}" in
+            refs/pull/*)
+              echo "::error::pull-request refs are not allowed"
+              exit 1
+              ;;
+          esac
+
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: ${{ steps.request.outputs.source_owner }}
+          repositories: ${{ steps.request.outputs.source_name }}
+          permission-actions: read
+          permission-contents: write
+          permission-issues: write
+          permission-metadata: read
+          permission-pull-requests: write
+
+      - name: Download source write artifact
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/remote-write-input"
+          gh run download "${{ steps.request.outputs.source_run_id }}" \
+            -R "${{ steps.request.outputs.source_repo }}" \
+            -n "${{ steps.request.outputs.input_artifact }}" \
+            -D "$RUNNER_TEMP/remote-write-input"
+
+      - uses: actions/checkout@v6
+        with:
+          repository: ${{ steps.request.outputs.source_repo }}
+          ref: ${{ steps.request.outputs.target_sha }}
+          token: ${{ steps.app-token.outputs.token }}
+          submodules: true
+          fetch-depth: 0
+          clean: false
+          persist-credentials: false
+
+      - name: Execute repo write request
+        id: write
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          METADATA_FILE="$RUNNER_TEMP/remote-write-output/remote-repo-write-metadata.json"
+          mkdir -p "$(dirname "$METADATA_FILE")"
+          uv run --project .bot python -m bot.repo_write execute \
+            --request-file "$RUNNER_TEMP/remote-write-input/request.json" \
+            --repo-root "$PWD" \
+            --repo "${{ steps.request.outputs.source_repo }}" \
+            --target-ref "${{ steps.request.outputs.target_ref }}" \
+            --target-sha "${{ steps.request.outputs.target_sha }}" \
+            --metadata-file "$METADATA_FILE" \
+            >> "$GITHUB_OUTPUT"
+
+      - name: Upload remote write output
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ steps.request.outputs.output_artifact }}
+          path: $RUNNER_TEMP/remote-write-output/remote-repo-write-metadata.json
+          retention-days: 7
