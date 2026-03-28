@@ -19,6 +19,10 @@ ALLOWED_OPERATION_TYPES = {
     "comment_pr",
     "comment_issue",
     "close_pr",
+    "create_branch",
+    "create_pr",
+    "edit_pr",
+    "ensure_labels",
     "edit_issue_labels",
     "push_patch",
 }
@@ -213,6 +217,112 @@ def _close_pr(repo: str, pr_target: str, *, comment: str = "", delete_branch: bo
     _run(cmd)
 
 
+def _ensure_labels(repo: str, labels: list[dict[str, object]]) -> None:
+    for label in labels:
+        name = str(label["name"])
+        color = str(label["color"])
+        description = str(label.get("description", ""))
+        cmd = ["gh", "label", "create", name, "--repo", repo, "--color", color, "--force"]
+        if description:
+            cmd.extend(["--description", description])
+        _run(cmd)
+
+
+def _create_branch(
+    repo_root: Path,
+    repo: str,
+    target_sha: str,
+    operation: dict,
+    context: dict[str, str],
+) -> dict[str, str]:
+    branch = str(operation["branch"])
+    commit_message = _render_template(str(operation["commit_message"]), context)
+    promote_message = _render_template(str(operation.get("promote_message") or commit_message), context)
+
+    _configure_git(repo_root, repo)
+    _git(repo_root, "checkout", "--detach", target_sha)
+    _git(repo_root, "switch", "-C", branch)
+    _git(repo_root, "commit", "--allow-empty", "-m", commit_message)
+    _git(repo_root, "push", "origin", f"HEAD:{branch}", "--force")
+
+    promotion = _promote(repo, branch, promote_message)
+    context["BRANCH"] = branch
+    context["UNSIGNED_SHA"] = promotion["unsigned_sha"]
+    context["SIGNED_SHA"] = promotion["signed_sha"]
+    return promotion
+
+
+def _create_pr(
+    request_path: Path,
+    repo: str,
+    operation: dict,
+    context: dict[str, str],
+) -> dict[str, str]:
+    title = _render_template(str(operation["title"]), context)
+    base = _render_template(str(operation["base"]), context)
+    head = _render_template(str(operation["head"]), context)
+
+    cmd = [
+        "gh",
+        "pr",
+        "create",
+        "--repo",
+        repo,
+        "--base",
+        base,
+        "--head",
+        head,
+        "--title",
+        title,
+    ]
+    if operation.get("draft", False):
+        cmd.append("--draft")
+
+    labels = operation.get("labels", [])
+    if labels:
+        rendered_labels = [_render_template(str(label), context) for label in labels]
+        cmd.extend(["--label", ",".join(rendered_labels)])
+
+    if "body_file" in operation:
+        body = _body_from_file(request_path, str(operation["body_file"]), context)
+        with tempfile.NamedTemporaryFile("w", delete=False) as handle:
+            handle.write(body)
+            temp_path = handle.name
+        try:
+            cmd.extend(["--body-file", temp_path])
+            result = _run(cmd)
+        finally:
+            Path(temp_path).unlink(missing_ok=True)
+    else:
+        body = _render_template(str(operation.get("body", "")), context)
+        cmd.extend(["--body", body])
+        result = _run(cmd)
+
+    pr_url = result.stdout.strip()
+    context["PR_URL"] = pr_url
+    return {"pr_url": pr_url}
+
+
+def _edit_pr(request_path: Path, repo: str, operation: dict, context: dict[str, str]) -> None:
+    pr_target = _render_template(str(operation["pr"]), context)
+    cmd = ["gh", "pr", "edit", pr_target, "--repo", repo]
+    if "body_file" in operation:
+        body = _body_from_file(request_path, str(operation["body_file"]), context)
+        with tempfile.NamedTemporaryFile("w", delete=False) as handle:
+            handle.write(body)
+            temp_path = handle.name
+        try:
+            cmd.extend(["--body-file", temp_path])
+            _run(cmd)
+        finally:
+            Path(temp_path).unlink(missing_ok=True)
+        return
+
+    body = _render_template(str(operation.get("body", "")), context)
+    cmd.extend(["--body", body])
+    _run(cmd)
+
+
 def _edit_issue_labels(repo: str, issue_number: int, operation: dict) -> None:
     cmd = ["gh", "issue", "edit", str(issue_number), "--repo", repo]
     add_labels = operation.get("add_labels", [])
@@ -274,6 +384,16 @@ def execute_request(
         op_type = operation["type"]
         if op_type == "push_patch":
             result = _push_patch(repo_root, repo, target_ref, request_path, operation, context)
+        elif op_type == "create_branch":
+            result = _create_branch(repo_root, repo, target_sha, operation, context)
+        elif op_type == "ensure_labels":
+            _ensure_labels(repo, list(operation.get("labels", [])))
+            result = {"ensured": "true"}
+        elif op_type == "create_pr":
+            result = _create_pr(request_path, repo, operation, context)
+        elif op_type == "edit_pr":
+            _edit_pr(request_path, repo, operation, context)
+            result = {"edited": "true"}
         elif op_type == "comment_pr":
             body = _body_from_file(request_path, operation["body_file"], context)
             _comment_pr(repo, int(operation["pr_number"]), body)

@@ -56,6 +56,36 @@ def test_load_request_accepts_close_pr_operation(tmp_path: Path) -> None:
     assert loaded["operations"][0]["type"] == "close_pr"
 
 
+def test_load_request_accepts_claim_flow_operations(tmp_path: Path) -> None:
+    request_path = tmp_path / "request.json"
+    request_path.write_text(
+        json.dumps(
+            {
+                "operations": [
+                    {"type": "ensure_labels", "labels": [{"name": "type:cop-fix", "color": "0e8a16"}]},
+                    {"type": "create_branch", "branch": "fix/style-negated_while-1", "commit_message": "start"},
+                    {
+                        "type": "create_pr",
+                        "base": "main",
+                        "head": "fix/style-negated_while-1",
+                        "title": "title",
+                        "body_file": "body.md",
+                    },
+                    {"type": "edit_pr", "pr": "{{PR_URL}}", "body_file": "body.md"},
+                ]
+            }
+        )
+    )
+
+    loaded = repo_write._load_request(request_path)  # noqa: SLF001
+    assert [operation["type"] for operation in loaded["operations"]] == [
+        "ensure_labels",
+        "create_branch",
+        "create_pr",
+        "edit_pr",
+    ]
+
+
 def test_has_worktree_changes_detects_untracked_files(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -154,4 +184,112 @@ def test_close_pr_uses_repo_comment_and_delete_branch(monkeypatch) -> None:
             "Agent produced no changes.",
             "--delete-branch",
         ]
+    ]
+
+
+def test_ensure_labels_uses_force_create(monkeypatch) -> None:
+    calls: list[list[str]] = []
+
+    def fake_run(cmd: list[str], *, cwd=None, check: bool = True):  # noqa: ANN001
+        calls.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    monkeypatch.setattr(repo_write, "_run", fake_run)
+
+    repo_write._ensure_labels(  # noqa: SLF001
+        "6/nitrocop",
+        [{"name": "type:cop-fix", "color": "0e8a16", "description": "cop fix"}],
+    )
+
+    assert calls == [
+        [
+            "gh",
+            "label",
+            "create",
+            "type:cop-fix",
+            "--repo",
+            "6/nitrocop",
+            "--color",
+            "0e8a16",
+            "--force",
+            "--description",
+            "cop fix",
+        ]
+    ]
+
+
+def test_create_pr_sets_pr_url_context(monkeypatch, tmp_path: Path) -> None:
+    request_path = tmp_path / "request.json"
+    request_path.write_text("{}")
+    body = tmp_path / "body.md"
+    body.write_text("hello")
+
+    calls: list[list[str]] = []
+
+    def fake_run(cmd: list[str], *, cwd=None, check: bool = True):  # noqa: ANN001
+        calls.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, "https://github.com/6/nitrocop/pull/123\n", "")
+
+    monkeypatch.setattr(repo_write, "_run", fake_run)
+    context = {}
+    result = repo_write._create_pr(  # noqa: SLF001
+        request_path,
+        "6/nitrocop",
+        {
+            "base": "main",
+            "head": "fix/style-negated_while-1",
+            "title": "Fix Style/NegatedWhile",
+            "body_file": "body.md",
+            "draft": True,
+            "labels": ["type:cop-fix", "model:claude-normal"],
+        },
+        context,
+    )
+
+    assert result == {"pr_url": "https://github.com/6/nitrocop/pull/123"}
+    assert context["PR_URL"] == "https://github.com/6/nitrocop/pull/123"
+    assert calls[0][:12] == [
+        "gh",
+        "pr",
+        "create",
+        "--repo",
+        "6/nitrocop",
+        "--base",
+        "main",
+        "--head",
+        "fix/style-negated_while-1",
+        "--title",
+        "Fix Style/NegatedWhile",
+        "--draft",
+    ]
+
+
+def test_edit_pr_renders_pr_url_from_context(monkeypatch, tmp_path: Path) -> None:
+    request_path = tmp_path / "request.json"
+    request_path.write_text("{}")
+    body = tmp_path / "body.md"
+    body.write_text("hello")
+
+    calls: list[list[str]] = []
+
+    def fake_run(cmd: list[str], *, cwd=None, check: bool = True):  # noqa: ANN001
+        calls.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    monkeypatch.setattr(repo_write, "_run", fake_run)
+
+    repo_write._edit_pr(  # noqa: SLF001
+        request_path,
+        "6/nitrocop",
+        {"pr": "{{PR_URL}}", "body_file": "body.md"},
+        {"PR_URL": "https://github.com/6/nitrocop/pull/123"},
+    )
+
+    assert calls[0][:6] == [
+        "gh",
+        "pr",
+        "edit",
+        "https://github.com/6/nitrocop/pull/123",
+        "--repo",
+        "6/nitrocop",
     ]
