@@ -105,7 +105,6 @@ The editable non-secret config lives in `wrangler.toml`:
 - `BOT_CONTROL_REPO`
 - `DISPATCH_WORKFLOW`
 - `WORKFLOW_REF`
-- `GITHUB_API_BASE`
 - `ALLOWED_ASSOCIATIONS`
 - `ALLOWED_COMMANDS`
 

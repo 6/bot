@@ -9,6 +9,5 @@ preview_urls = false
 BOT_CONTROL_REPO = "6/bot"
 DISPATCH_WORKFLOW = "webhook-command.yml"
 WORKFLOW_REF = "main"
-GITHUB_API_BASE = "https://api.github.com"
 ALLOWED_ASSOCIATIONS = "OWNER,MEMBER,COLLABORATOR"
 ALLOWED_COMMANDS = "/6bot repair,/6bot fix"

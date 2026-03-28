@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 import rsa
 
-from github_webhook.config import Settings
+from github_webhook.config import GITHUB_API_BASE, Settings
 
 
 def _base64url_encode(value: bytes) -> str:
@@ -54,7 +54,7 @@ def build_installation_token_request(
 ) -> InstallationTokenRequest:
     app_jwt = build_app_jwt(settings.github_app_id, settings.github_app_private_key, now=now)
     return InstallationTokenRequest(
-        url=f"{settings.github_api_base}/app/installations/{installation_id}/access_tokens",
+        url=f"{GITHUB_API_BASE}/app/installations/{installation_id}/access_tokens",
         headers={
             "Accept": "application/vnd.github+json",
             "Authorization": f"Bearer {app_jwt}",

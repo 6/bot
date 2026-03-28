@@ -3,6 +3,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 
+GITHUB_API_BASE = "https://api.github.com"
+
 
 def _read_env(env: object, name: str) -> str | None:
     if isinstance(env, Mapping):
@@ -28,7 +30,6 @@ class Settings:
     dispatch_workflow: str
     github_app_id: str
     github_app_private_key: str
-    github_api_base: str
     webhook_secret: str
     workflow_ref: str
 
@@ -38,7 +39,6 @@ def load_settings(env: object) -> Settings:
         "BOT_CONTROL_REPO": _read_env(env, "BOT_CONTROL_REPO"),
         "DISPATCH_WORKFLOW": _read_env(env, "DISPATCH_WORKFLOW"),
         "WORKFLOW_REF": _read_env(env, "WORKFLOW_REF"),
-        "GITHUB_API_BASE": _read_env(env, "GITHUB_API_BASE"),
         "GH_APP_ID": _read_env(env, "GH_APP_ID"),
         "GH_APP_PRIVATE_KEY": _read_env(env, "GH_APP_PRIVATE_KEY"),
         "ALLOWED_REPOSITORIES": _read_env(env, "ALLOWED_REPOSITORIES"),
@@ -60,7 +60,6 @@ def load_settings(env: object) -> Settings:
         dispatch_workflow=required["DISPATCH_WORKFLOW"] or "",
         github_app_id=required["GH_APP_ID"] or "",
         github_app_private_key=required["GH_APP_PRIVATE_KEY"] or "",
-        github_api_base=required["GITHUB_API_BASE"] or "",
         webhook_secret=required["GITHUB_WEBHOOK_SECRET"] or "",
         workflow_ref=required["WORKFLOW_REF"] or "",
     )

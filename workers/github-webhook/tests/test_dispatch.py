@@ -14,7 +14,6 @@ def test_build_workflow_dispatch_request_uses_expected_contract() -> None:
         dispatch_workflow="webhook-command.yml",
         github_app_id="12345",
         github_app_private_key="pem",
-        github_api_base="https://api.github.com",
         webhook_secret="secret",
         workflow_ref="main",
     )
@@ -27,7 +26,7 @@ def test_build_workflow_dispatch_request_uses_expected_contract() -> None:
 
     built = build_workflow_dispatch_request(settings, request, access_token="token")
 
-    assert built.url.endswith("/repos/6/bot/actions/workflows/webhook-command.yml/dispatches")
+    assert built.url == "https://api.github.com/repos/6/bot/actions/workflows/webhook-command.yml/dispatches"
     assert built.headers["Authorization"] == "Bearer token"
     assert json.loads(built.body) == {
         "ref": "main",
