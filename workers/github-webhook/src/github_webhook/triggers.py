@@ -8,10 +8,8 @@ from dataclasses import dataclass
 class MentionTrigger:
     login: str
     prompt: str
-
-
-def parse_owner_mention(body: str, *, owner_login: str) -> MentionTrigger | None:
-    mention = f"@{owner_login}"
+def parse_bot_mention(body: str, *, bot_login: str) -> MentionTrigger | None:
+    mention = f"@{bot_login}"
     lines = body.splitlines()
 
     first_nonempty_index: int | None = None
@@ -38,6 +36,6 @@ def parse_owner_mention(body: str, *, owner_login: str) -> MentionTrigger | None
     prompt_lines.extend(lines[first_nonempty_index + 1 :])
 
     return MentionTrigger(
-        login=owner_login,
+        login=bot_login,
         prompt="\n".join(prompt_lines).strip(),
     )

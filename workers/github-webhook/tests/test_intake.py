@@ -166,7 +166,7 @@ def test_extract_dispatch_request_ignores_non_trigger_mentions(settings: Setting
         "installation": {"id": 123},
     }
 
-    with pytest.raises(IgnoreWebhook, match="owner mention trigger"):
+    with pytest.raises(IgnoreWebhook, match="bot mention trigger"):
         extract_dispatch_request(
             event_name="issue_comment",
             delivery_id=None,

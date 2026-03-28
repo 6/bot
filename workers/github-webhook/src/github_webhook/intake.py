@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from github_webhook.config import Settings
-from github_webhook.triggers import parse_owner_mention
+from github_webhook.triggers import parse_bot_mention
 
 
 class IgnoreWebhook(ValueError):
@@ -94,9 +94,9 @@ def _extract_comment_request(
 
     comment = _require_mapping(payload.get("comment"), field="comment")
     comment_body = str(comment.get("body", ""))
-    mention = parse_owner_mention(comment_body, owner_login=source_owner)
+    mention = parse_bot_mention(comment_body, bot_login=source_owner)
     if mention is None:
-        raise IgnoreWebhook("comment does not begin with an owner mention trigger")
+        raise IgnoreWebhook("comment does not begin with a bot mention trigger")
 
     association = str(comment.get("author_association", "")).upper()
     if association not in settings.allowed_associations:
