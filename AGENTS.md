@@ -6,8 +6,9 @@ This repo is intentionally small. It owns:
 - secret-bearing agent execution
 - source-repo allowlisting
 - trusted-ref enforcement
-- GitHub App token minting for source-repo read access
+- GitHub App token minting for source-repo access
 - backend selection and secret injection
+- generic privileged GitHub write operations for allowlisted repos
 - remote artifact handoff back to the calling repo
 
 This repo does **not** own target-repo orchestration. Each target repo decides:
@@ -21,9 +22,10 @@ This repo does **not** own target-repo orchestration. Each target repo decides:
 
 - `6/bot` is a **generic executor**, not a reusable workflow library for repo-specific CI.
 - Target repos dispatch work into `6/bot` using `repository_dispatch`.
-- `6/bot` checks that the source repo is explicitly allowlisted, then checks out the target repo at the requested SHA and runs the selected backend with secrets that live only here.
+- `6/bot` checks that the source repo is explicitly allowlisted, then checks out the target repo at the requested SHA and either runs the selected backend or performs a generic write request with credentials that live only here.
 - Target repos may expose an optional `.github/actions/bot-setup/action.yml` hook for language/toolchain setup. That hook runs inside the target repo checkout, so only allow trusted repos and trusted refs.
 - The remote agent writes runtime artifacts and a patch. The calling repo downloads those artifacts and applies the patch locally.
+- The remote repo-write path executes generic privileged side effects such as comments, label edits, and patch push/promotion on behalf of the target repo.
 
 ## Security Model
 
@@ -33,11 +35,15 @@ This repo is public by design, but it is meant to be tightly controlled:
 - all model secrets stay in this repo, never in target repos
 - only explicitly allowlisted source repos may dispatch work here
 - only branch/tag refs are accepted; `refs/pull/*` is rejected
-- the requested `target_sha` must be contained in the requested `target_ref`
+- the requested `target_sha` must still match the trusted ref contract for the requested operation
 
 Important:
 - allowlisting a repo means you trust its checked-out code to run under this control plane
 - target repos must gate dispatch on their own side too; `6/bot` is a second line of defense, not the first
+
+Trusted ref modes:
+- remote agent execution may target a trusted branch/tag ref and run at the requested SHA
+- remote repo-write requests default to `current_head` matching, so the target branch must still point at the expected SHA when the privileged write runs
 
 ## Repo Layout
 
@@ -85,6 +91,21 @@ High-level flow:
 10. Run the selected backend through `.github/actions/run-agent`.
 11. Leak-scan runtime artifacts and upload the output artifact back to the caller.
 
+### `remote-repo-write.yml`
+
+Triggered by `repository_dispatch` with event type `repo_write`.
+
+High-level flow:
+1. Parse the dispatch payload.
+2. Check the source repo against `config/allowlist.toml`.
+3. Reject non-`6/*` repos, non-branch/tag refs, and PR refs.
+4. Mint a GitHub App token for the source repo with the write permissions needed by the requested operations.
+5. Download the caller-provided request artifact.
+6. Check out the source repo at `target_sha`.
+7. Verify the trusted ref contract for the request.
+8. Execute the generic repo-write request.
+9. Upload metadata back to the caller.
+
 ### `checks.yml`
 
 Runs on `push` to `main` and `workflow_dispatch`.
@@ -118,7 +139,7 @@ allowed_repositories = [
 To add a new repo:
 1. Add `owner/repo` to `config/allowlist.toml`.
 2. Commit and push to `main`.
-3. Make sure the GitHub App used by `6/bot` is installed on that repo with the minimum read permissions needed by `remote-agent.yml`.
+3. Make sure the GitHub App used by `6/bot` is installed on that repo with the minimum permissions needed by the workflows that repo will use.
 
 ## Supported Backends
 
@@ -141,7 +162,7 @@ The resolver is responsible for:
 
 ## How A Target Repo Integrates
 
-The target repo should keep its own orchestration and use `6/bot` only for the privileged execution step.
+The target repo should keep its own orchestration and use `6/bot` only for privileged execution and publish steps.
 
 Minimum integration pieces:
 
@@ -152,6 +173,8 @@ Minimum integration pieces:
    - optionally `task.md`
 4. A wait/download step that retrieves the remote output artifact.
 5. Local application of the returned patch.
+
+If the target repo also wants `6/bot` to own privileged publish/mutation steps, add a second bridge for repo-write requests instead of doing those writes locally.
 
 The calling repo should send a payload with:
 - `request_id`
@@ -167,6 +190,21 @@ The calling repo should send a payload with:
 - optional `diff_paths`
 - optional `setup_profile`
 - optional `setup_config_json`
+
+Repo-write payloads should send:
+- `request_id`
+- `source_repo`
+- `source_run_id`
+- `input_artifact`
+- `output_artifact`
+- `target_sha`
+- `target_ref`
+
+The repo-write request artifact may contain operations such as:
+- `comment_pr`
+- `comment_issue`
+- `edit_issue_labels`
+- `push_patch`
 
 ## Optional Target-Repo Setup Hook
 
@@ -190,6 +228,7 @@ This hook should stay repo-local. Do not move language- or repo-specific setup i
 When integrating a new repo:
 - keep all model secrets in `6/bot`
 - keep repo-specific prompts, setup, trust policy, and verification in the target repo
+- keep repo-specific publish policy in the target repo, even if `6/bot` executes the final privileged mutation
 - gate dispatch on trusted refs before contacting `6/bot`
 - avoid dispatching PR head refs from untrusted forks
 - prefer slash-command or maintainer-only triggers over broad public comment triggers
@@ -211,7 +250,7 @@ uv run python -m bot.allowlist check-repo owner/repo-a
 - repo-specific orchestration belongs in the source repo
 - repo-specific language/toolchain setup belongs in the source repo’s optional `bot-setup` action
 - update tests when changing allowlist, secret validation, backend resolution, or runtime contract
-- treat changes to `remote-agent.yml`, `run-agent/action.yml`, and backend resolution as security-sensitive
+- treat changes to `remote-agent.yml`, `remote-repo-write.yml`, `run-agent/action.yml`, and privileged GitHub mutation helpers as security-sensitive
 
 ## When Updating The Contract
 
