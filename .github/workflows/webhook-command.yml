@@ -3,7 +3,7 @@ run-name: webhook-trigger ${{ inputs.request_id }}
 
 permissions:
   contents: read
-  actions: read
+  actions: write
 
 on:
   workflow_dispatch:
@@ -132,7 +132,35 @@ jobs:
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Dispatch issue task internally
+        if: steps.request.outputs.subject_kind == 'issue'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_PAYLOAD: ${{ inputs.payload }}
+          REQUEST_ID: ${{ steps.request.outputs.request_id }}
+          SOURCE_REPO: ${{ steps.request.outputs.source_repo }}
+        run: |
+          PAYLOAD_FILE="$RUNNER_TEMP/internal-repo-task-dispatch.json"
+          python3 - <<'PY' > "$PAYLOAD_FILE"
+          import json
+          import os
+
+          payload = {
+              "ref": "main",
+              "inputs": {
+                  "request_id": os.environ["REQUEST_ID"],
+                  "source_repo": os.environ["SOURCE_REPO"],
+                  "payload": os.environ["INPUT_PAYLOAD"],
+              },
+          }
+          print(json.dumps(payload))
+          PY
+          gh api "repos/${{ github.repository }}/actions/workflows/repo-task.yml/dispatches" \
+            --method POST \
+            --input "$PAYLOAD_FILE"
+
       - name: Generate source-repo workflow token
+        if: steps.request.outputs.subject_kind == 'pull_request'
         id: source-token
         uses: actions/create-github-app-token@v3
         with:
@@ -145,6 +173,7 @@ jobs:
           permission-metadata: read
 
       - name: Forward webhook command to source repo
+        if: steps.request.outputs.subject_kind == 'pull_request'
         env:
           GH_TOKEN: ${{ steps.source-token.outputs.token }}
           INPUT_PAYLOAD: ${{ inputs.payload }}

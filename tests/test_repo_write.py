@@ -268,6 +268,58 @@ def test_create_pr_sets_pr_url_context(monkeypatch, tmp_path: Path) -> None:
     ]
 
 
+def test_execute_request_surfaces_branch_and_pr_metadata(monkeypatch, tmp_path: Path) -> None:
+    request_path = tmp_path / "request.json"
+    request_path.write_text(
+        json.dumps(
+            {
+                "match_mode": "current_head",
+                "operations": [
+                    {"type": "create_branch", "branch": "fix/style-foo-1", "commit_message": "start"},
+                    {
+                        "type": "create_pr",
+                        "base": "main",
+                        "head": "fix/style-foo-1",
+                        "title": "Fix Style/Foo",
+                        "body_file": "body.md",
+                    },
+                ],
+            }
+        )
+    )
+    (tmp_path / "body.md").write_text("body\n")
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+
+    monkeypatch.setattr(repo_write, "_validate_target_ref", lambda *args, **kwargs: None)
+
+    def fake_create_branch(repo_root_arg, repo, target_sha, operation, context):  # noqa: ANN001
+        context["BRANCH"] = operation["branch"]
+        context["SIGNED_SHA"] = "signed123"
+        context["UNSIGNED_SHA"] = "unsigned123"
+        return {"signed_sha": "signed123", "unsigned_sha": "unsigned123"}
+
+    def fake_create_pr(request_path_arg, repo, operation, context):  # noqa: ANN001
+        context["PR_URL"] = "https://github.com/6/nitrocop/pull/123"
+        return {"pr_url": "https://github.com/6/nitrocop/pull/123"}
+
+    monkeypatch.setattr(repo_write, "_create_branch", fake_create_branch)
+    monkeypatch.setattr(repo_write, "_create_pr", fake_create_pr)
+
+    metadata = repo_write.execute_request(
+        request_path=request_path,
+        repo_root=repo_root,
+        repo="6/nitrocop",
+        target_ref="refs/heads/main",
+        target_sha="abc123",
+    )
+
+    assert metadata["branch"] == "fix/style-foo-1"
+    assert metadata["pr_url"] == "https://github.com/6/nitrocop/pull/123"
+    assert metadata["signed_sha"] == "signed123"
+    assert metadata["unsigned_sha"] == "unsigned123"
+
+
 def test_edit_pr_renders_pr_url_from_context(monkeypatch, tmp_path: Path) -> None:
     request_path = tmp_path / "request.json"
     request_path.write_text("{}")

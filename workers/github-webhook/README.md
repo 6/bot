@@ -24,12 +24,15 @@ Supported today:
 The worker currently dispatches to:
 - `webhook-command.yml`
 
-That workflow is the first landing point inside `6/bot`. It validates the request, then forwards it into the source repo's `bot-command.yml` workflow with a GitHub App token.
+That workflow is the first landing point inside `6/bot`. It validates the request, then:
+- routes issue-driven tasks into `repo-task.yml` inside `6/bot`
+- forwards PR-comment triggers into the source repo's `bot-command.yml` workflow with a GitHub App token
 
 For `6/*` repos today, that means:
 - PR comment beginning with `@6` triggers the PR repair path
-- Cop-tracker issue comment beginning with `@6` triggers the cop-fix path
-- Assigning a cop-tracker issue to `@6` triggers the cop-fix path and uses the issue title/body as the prompt
+- Cop-tracker issue comment beginning with `@6` triggers the internal issue-task path
+- Assigning a cop-tracker issue to `@6` triggers the internal issue-task path and uses the issue title/body as the prompt
+- Allowlisted automation from `github-actions[bot]` may also assign/comment to trigger the same path
 
 ## Local Setup
 

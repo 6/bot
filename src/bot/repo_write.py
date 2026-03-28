@@ -474,6 +474,10 @@ def execute_request(
         "target_sha": target_sha,
         "operations": results,
     }
+    if "BRANCH" in context:
+        metadata["branch"] = context["BRANCH"]
+    if "PR_URL" in context:
+        metadata["pr_url"] = context["PR_URL"]
     if "SIGNED_SHA" in context:
         metadata["signed_sha"] = context["SIGNED_SHA"]
     if "UNSIGNED_SHA" in context:
@@ -504,7 +508,7 @@ def main() -> int:
             target_sha=args.target_sha,
         )
         args.metadata_file.write_text(json.dumps(metadata, indent=2) + "\n")
-        for key in ("signed_sha", "unsigned_sha"):
+        for key in ("branch", "pr_url", "signed_sha", "unsigned_sha"):
             if key in metadata:
                 print(f"{key}={metadata[key]}")
         return 0

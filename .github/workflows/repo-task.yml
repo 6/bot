@@ -1,0 +1,335 @@
+name: Repo Task
+run-name: repo-task ${{ inputs.request_id }}
+
+permissions:
+  contents: read
+  actions: read
+
+on:
+  workflow_dispatch:
+    inputs:
+      request_id:
+        description: Unique request identifier for tracking
+        required: true
+        type: string
+      source_repo:
+        description: Source repository (owner/name) — used for concurrency grouping
+        required: true
+        type: string
+      payload:
+        description: Full JSON task payload from the webhook ingress
+        required: true
+        type: string
+
+concurrency:
+  group: repo-task-${{ inputs.source_repo }}
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          path: .bot
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Resolve request
+        id: request
+        shell: bash
+        env:
+          INPUT_PAYLOAD: ${{ inputs.payload }}
+          INPUT_SOURCE_REPO: ${{ inputs.source_repo }}
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          import os
+          import sys
+
+          payload = json.loads(os.environ["INPUT_PAYLOAD"])
+          source_repo = payload["source_repo"]
+
+          if source_repo != os.environ["INPUT_SOURCE_REPO"]:
+              print("::error::payload source_repo does not match workflow input", file=sys.stderr)
+              sys.exit(1)
+
+          source_owner, source_name = source_repo.split("/", 1)
+          outputs = {
+              "request_id": payload["request_id"],
+              "source_repo": source_repo,
+              "source_owner": source_owner,
+              "source_name": source_name,
+              "event_name": payload["event_name"],
+              "event_action": payload["event_action"],
+              "trigger_kind": payload["trigger_kind"],
+              "subject_kind": payload["subject_kind"],
+              "requested_by": payload["requested_by"],
+              "requested_by_association": payload["requested_by_association"],
+              "issue_number": str(payload["issue_number"]),
+              "request_url": payload.get("request_url", ""),
+          }
+          for key, value in outputs.items():
+              safe = str(value).replace("\n", "").replace("\r", "")
+              print(f"{key}={safe}")
+          PY
+
+      - name: Validate source repo
+        env:
+          SOURCE_REPO: ${{ steps.request.outputs.source_repo }}
+          SOURCE_OWNER: ${{ steps.request.outputs.source_owner }}
+        run: |
+          uv run --project .bot python -m bot.allowlist check-repo "$SOURCE_REPO"
+
+          if [ "$SOURCE_OWNER" != "6" ]; then
+            echo "::error::6/bot only accepts repo tasks for repositories owned by 6"
+            exit 1
+          fi
+
+      - name: Generate source-repo token
+        id: source-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: ${{ steps.request.outputs.source_owner }}
+          repositories: ${{ steps.request.outputs.source_name }}
+          permission-actions: read
+          permission-contents: write
+          permission-issues: write
+          permission-metadata: read
+          permission-pull-requests: write
+
+      - name: Resolve source default branch
+        id: source-branch
+        env:
+          GH_TOKEN: ${{ steps.source-token.outputs.token }}
+          SOURCE_REPO: ${{ steps.request.outputs.source_repo }}
+        run: |
+          DEFAULT_BRANCH=$(gh api "repos/$SOURCE_REPO" --jq '.default_branch')
+          DEFAULT_SHA=$(gh api "repos/$SOURCE_REPO/git/ref/heads/$DEFAULT_BRANCH" --jq '.object.sha')
+          echo "default_branch=$DEFAULT_BRANCH" >> "$GITHUB_OUTPUT"
+          echo "default_sha=$DEFAULT_SHA" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v6
+        with:
+          repository: ${{ steps.request.outputs.source_repo }}
+          ref: ${{ steps.source-branch.outputs.default_branch }}
+          token: ${{ steps.source-token.outputs.token }}
+          submodules: true
+          fetch-depth: 0
+          clean: false
+          persist-credentials: false
+
+      - name: Route repo task
+        id: route
+        env:
+          GH_TOKEN: ${{ steps.source-token.outputs.token }}
+          INPUT_PAYLOAD: ${{ inputs.payload }}
+        run: |
+          python3 scripts/workflows/repo_task.py route \
+            --repo "${{ steps.request.outputs.source_repo }}" \
+            --payload-json "$INPUT_PAYLOAD" \
+            >> "$GITHUB_OUTPUT"
+
+      - name: Comment when repo task is not dispatchable
+        if: steps.route.outputs.action == 'comment_only'
+        env:
+          GH_TOKEN: ${{ steps.source-token.outputs.token }}
+        run: |
+          BODY_FILE="$RUNNER_TEMP/repo-task-not-started.md"
+          cat > "$BODY_FILE" <<EOF
+          ## Bot task not started
+
+          - Reason: ${{ steps.route.outputs.reason }}
+          - Requested by: @${{ steps.route.outputs.requested_by }}
+          - Trigger: ${{ steps.route.outputs.trigger_summary }}
+          EOF
+          if [ -n "${{ steps.route.outputs.request_url }}" ]; then
+            echo "- Request: ${{ steps.route.outputs.request_url }}" >> "$BODY_FILE"
+          fi
+          gh issue comment "${{ steps.route.outputs.issue_number }}" \
+            --repo "${{ steps.request.outputs.source_repo }}" \
+            --body-file "$BODY_FILE"
+
+      - name: Detect target repo bot setup action
+        if: steps.route.outputs.action == 'run_agent'
+        id: setup
+        shell: bash
+        run: |
+          if [ -f ".github/actions/bot-setup/action.yml" ]; then
+            echo "has_bot_setup=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_bot_setup=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: ./.github/actions/bot-setup
+        if: steps.route.outputs.action == 'run_agent' && steps.setup.outputs.has_bot_setup == 'true'
+        with:
+          setup_profile: ${{ steps.route.outputs.setup_profile }}
+          setup_config_json: ${{ steps.route.outputs.setup_config_json }}
+
+      - name: Initialize runtime layout
+        if: steps.route.outputs.action == 'run_agent'
+        env:
+          WORKFLOW_NAME: ${{ steps.route.outputs.workflow }}
+        run: |
+          python3 scripts/workflows/agent_runtime.py "$WORKFLOW_NAME" \
+            --runner-temp "${RUNNER_TEMP}" >> "$GITHUB_ENV"
+
+      - name: Prepare repo task
+        if: steps.route.outputs.action == 'run_agent'
+        id: prepare
+        env:
+          GH_TOKEN: ${{ steps.source-token.outputs.token }}
+          INPUT_PAYLOAD: ${{ inputs.payload }}
+        run: |
+          python3 scripts/workflows/repo_task.py prepare \
+            --repo "${{ steps.request.outputs.source_repo }}" \
+            --payload-json "$INPUT_PAYLOAD" \
+            --default-branch "${{ steps.source-branch.outputs.default_branch }}" \
+            --default-branch-sha "${{ steps.source-branch.outputs.default_sha }}" \
+            --state-file "$RUNNER_TEMP/repo-task-state.json" \
+            >> "$GITHUB_OUTPUT"
+
+      - name: Execute skip request
+        if: steps.prepare.outputs.mode == 'skip'
+        id: skip
+        env:
+          GH_TOKEN: ${{ steps.source-token.outputs.token }}
+          SOURCE_REPO: ${{ steps.request.outputs.source_repo }}
+        run: |
+          METADATA_FILE="$RUNNER_TEMP/repo-task-skip-metadata.json"
+          uv run --project .bot python -m bot.repo_write execute \
+            --request-file "${{ steps.prepare.outputs.request_file }}" \
+            --repo-root "$PWD" \
+            --repo "$SOURCE_REPO" \
+            --target-ref "${{ steps.prepare.outputs.target_ref }}" \
+            --target-sha "${{ steps.prepare.outputs.target_sha }}" \
+            --metadata-file "$METADATA_FILE" \
+            >> "$GITHUB_OUTPUT"
+
+      - name: Execute claim request
+        if: steps.prepare.outputs.mode == 'agent'
+        id: claim
+        env:
+          GH_TOKEN: ${{ steps.source-token.outputs.token }}
+          SOURCE_REPO: ${{ steps.request.outputs.source_repo }}
+        run: |
+          METADATA_FILE="$RUNNER_TEMP/repo-task-claim-metadata.json"
+          uv run --project .bot python -m bot.repo_write execute \
+            --request-file "${{ steps.prepare.outputs.request_file }}" \
+            --repo-root "$PWD" \
+            --repo "$SOURCE_REPO" \
+            --target-ref "${{ steps.prepare.outputs.target_ref }}" \
+            --target-sha "${{ steps.prepare.outputs.target_sha }}" \
+            --metadata-file "$METADATA_FILE" \
+            >> "$GITHUB_OUTPUT"
+
+      - name: Prepare agent
+        if: steps.prepare.outputs.mode == 'agent'
+        id: prepare_agent
+        env:
+          GH_TOKEN: ${{ steps.source-token.outputs.token }}
+        run: |
+          python3 scripts/workflows/repo_task.py prepare-agent \
+            --repo "${{ steps.request.outputs.source_repo }}" \
+            --state-file "$RUNNER_TEMP/repo-task-state.json" \
+            --claim-metadata-file "$RUNNER_TEMP/repo-task-claim-metadata.json" \
+            >> "$GITHUB_OUTPUT"
+
+      - name: Run agent
+        if: steps.prepare.outputs.mode == 'agent'
+        id: agent
+        uses: ./.bot/.github/actions/run-agent
+        with:
+          backend: ${{ steps.prepare.outputs.backend }}
+          actions_read_token: ${{ steps.source-token.outputs.token }}
+          anthropic_auth_token: ${{ secrets.MINIMAX_API_KEY }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          codex_auth_json: ${{ secrets.CODEX_AUTH_JSON }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          base_sha: ${{ steps.prepare_agent.outputs.base_sha }}
+          workflow: ${{ steps.route.outputs.workflow }}
+          diff_paths: ${{ steps.prepare.outputs.diff_paths }}
+
+      - name: Publish summary
+        if: always() && steps.prepare.outputs.mode == 'agent' && steps.agent.outputs.leak_scan_ok == 'true'
+        run: |
+          if [ -f "$SUMMARY_FILE" ]; then
+            cat "$SUMMARY_FILE" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload repo task artifacts
+        if: always() && steps.prepare.outputs.mode == 'agent' && steps.agent.outputs.leak_scan_ok == 'true'
+        uses: actions/upload-artifact@v6
+        with:
+          name: repo-task-${{ steps.request.outputs.request_id }}
+          path: $AGENT_RUNTIME_ROOT
+          retention-days: 7
+
+      - name: Finalize repo task
+        if: steps.prepare.outputs.mode == 'agent' && steps.agent.outcome == 'success' && steps.agent.outputs.leak_scan_ok == 'true'
+        id: finalize
+        env:
+          GH_TOKEN: ${{ steps.source-token.outputs.token }}
+        run: |
+          python3 scripts/workflows/repo_task.py finalize \
+            --repo "${{ steps.request.outputs.source_repo }}" \
+            --state-file "$RUNNER_TEMP/repo-task-state.json" \
+            --claim-metadata-file "$RUNNER_TEMP/repo-task-claim-metadata.json" \
+            --base-sha "${{ steps.prepare_agent.outputs.base_sha }}" \
+            --output-dir "$RUNNER_TEMP/repo-task-finalize" \
+            --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --run-number "${{ github.run_number }}" \
+            >> "$GITHUB_OUTPUT"
+
+      - name: Execute finalize request
+        if: steps.finalize.outputs.request_file != ''
+        env:
+          GH_TOKEN: ${{ steps.source-token.outputs.token }}
+          SOURCE_REPO: ${{ steps.request.outputs.source_repo }}
+        run: |
+          METADATA_FILE="$RUNNER_TEMP/repo-task-finalize-metadata.json"
+          uv run --project .bot python -m bot.repo_write execute \
+            --request-file "${{ steps.finalize.outputs.request_file }}" \
+            --repo-root "$PWD" \
+            --repo "$SOURCE_REPO" \
+            --target-ref "${{ steps.finalize.outputs.target_ref }}" \
+            --target-sha "${{ steps.finalize.outputs.target_sha }}" \
+            --metadata-file "$METADATA_FILE"
+
+      - name: Build cleanup request
+        if: failure() && steps.route.outputs.action == 'run_agent'
+        id: cleanup
+        env:
+          GH_TOKEN: ${{ steps.source-token.outputs.token }}
+        run: |
+          python3 scripts/workflows/repo_task.py cleanup \
+            --repo "${{ steps.request.outputs.source_repo }}" \
+            --state-file "$RUNNER_TEMP/repo-task-state.json" \
+            --claim-metadata-file "$RUNNER_TEMP/repo-task-claim-metadata.json" \
+            --output-dir "$RUNNER_TEMP/repo-task-cleanup" \
+            --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            >> "$GITHUB_OUTPUT"
+
+      - name: Execute cleanup request
+        if: failure() && steps.cleanup.outputs.request_file != ''
+        env:
+          GH_TOKEN: ${{ steps.source-token.outputs.token }}
+          SOURCE_REPO: ${{ steps.request.outputs.source_repo }}
+        run: |
+          METADATA_FILE="$RUNNER_TEMP/repo-task-cleanup-metadata.json"
+          uv run --project .bot python -m bot.repo_write execute \
+            --request-file "${{ steps.cleanup.outputs.request_file }}" \
+            --repo-root "$PWD" \
+            --repo "$SOURCE_REPO" \
+            --target-ref "${{ steps.cleanup.outputs.target_ref }}" \
+            --target-sha "${{ steps.cleanup.outputs.target_sha }}" \
+            --metadata-file "$METADATA_FILE"

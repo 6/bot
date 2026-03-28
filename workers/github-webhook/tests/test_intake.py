@@ -151,6 +151,60 @@ def test_extract_dispatch_request_from_issue_assignment(settings: Settings) -> N
     assert dispatched["request_url"] == "https://github.com/6/nitrocop/issues/17"
 
 
+def test_extract_dispatch_request_accepts_github_actions_comment_trigger(settings: Settings) -> None:
+    payload = {
+        "action": "created",
+        "repository": {"full_name": "6/nitrocop"},
+        "issue": {"number": 7, "html_url": "https://github.com/6/nitrocop/issues/7"},
+        "comment": {
+            "id": 1,
+            "body": "@6 keep the fix narrow",
+            "html_url": "https://github.com/6/nitrocop/issues/7#issuecomment-1",
+            "author_association": "NONE",
+        },
+        "sender": {"login": "github-actions[bot]"},
+        "installation": {"id": 123},
+    }
+
+    request = extract_dispatch_request(
+        event_name="issue_comment",
+        delivery_id=None,
+        payload=payload,
+        settings=settings,
+    )
+
+    dispatched = json.loads(request.payload_json)
+    assert dispatched["requested_by"] == "github-actions[bot]"
+    assert dispatched["prompt_text"] == "keep the fix narrow"
+
+
+def test_extract_dispatch_request_accepts_github_actions_assignment(settings: Settings) -> None:
+    payload = {
+        "action": "assigned",
+        "repository": {"full_name": "6/nitrocop"},
+        "issue": {
+            "number": 17,
+            "title": "[cop] Style/FooBar",
+            "body": "Please improve the edge cases.\n<!-- nitrocop-cop-tracker: cop=Style/FooBar -->",
+            "html_url": "https://github.com/6/nitrocop/issues/17",
+        },
+        "assignee": {"login": "6"},
+        "sender": {"login": "github-actions[bot]"},
+        "installation": {"id": 123},
+    }
+
+    request = extract_dispatch_request(
+        event_name="issues",
+        delivery_id=None,
+        payload=payload,
+        settings=settings,
+    )
+
+    dispatched = json.loads(request.payload_json)
+    assert dispatched["trigger_kind"] == "assignment"
+    assert dispatched["requested_by"] == "github-actions[bot]"
+
+
 def test_extract_dispatch_request_ignores_non_trigger_mentions(settings: Settings) -> None:
     payload = {
         "action": "created",

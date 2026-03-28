@@ -7,6 +7,8 @@ from typing import Any
 from github_webhook.config import Settings
 from github_webhook.triggers import parse_bot_mention
 
+AUTOMATION_ACTORS = {"github-actions[bot]"}
+
 
 class IgnoreWebhook(ValueError):
     """Raised when a valid webhook should be ignored without retrying."""
@@ -99,7 +101,7 @@ def _extract_comment_request(
         raise IgnoreWebhook("comment does not begin with a bot mention trigger")
 
     association = str(comment.get("author_association", "")).upper()
-    if association not in settings.allowed_associations:
+    if requested_by not in AUTOMATION_ACTORS and association not in settings.allowed_associations:
         raise IgnoreWebhook(
             f"comment author association is not allowed: {association or 'UNKNOWN'}"
         )
@@ -170,8 +172,12 @@ def _extract_issue_assignment_request(
     assigned_to = str(assignee.get("login", "")).strip()
     if not assigned_to:
         raise ValueError("assignee.login is required")
-    if requested_by != source_owner or assigned_to != source_owner:
-        raise IgnoreWebhook("issue assignment trigger requires self-assignment to the repo owner")
+    if assigned_to != source_owner:
+        raise IgnoreWebhook("issue assignment trigger requires assignment to the repo owner")
+    if requested_by not in {source_owner, *AUTOMATION_ACTORS}:
+        raise IgnoreWebhook(
+            "issue assignment trigger requires self-assignment to the repo owner"
+        )
 
     request_id = (
         f"webhook-{delivery_id}"
