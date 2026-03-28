@@ -58,7 +58,8 @@ jobs:
               "setup_config_json": json.dumps(payload.get("setup_config_json", {})),
           }
           for key, value in outputs.items():
-              print(f"{key}={value}")
+              safe = str(value).replace("\n", "").replace("\r", "")
+              print(f"{key}={safe}")
           PY
 
       - name: Validate source repo and target ref

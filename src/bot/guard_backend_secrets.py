@@ -63,6 +63,7 @@ def _collect_values(
             if len(value) >= 8:
                 for b64 in _base64_variants(value):
                     values.append((f"{label}:b64", b64))
+                values.append((f"{label}:hex", value.encode().hex()))
 
     deduped = []
     seen = set()
@@ -119,7 +120,7 @@ def _load_all_secrets(
 
 
 def emit_masks(var_names: list[str], ignore_missing: bool) -> int:
-    secret_values = _load_all_secrets(var_names, ignore_missing, include_raw=False)
+    secret_values = _load_all_secrets(var_names, ignore_missing, include_raw=True)
     if not secret_values:
         print("No backend secrets found to mask.")
         return 0

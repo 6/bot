@@ -121,6 +121,20 @@ runs:
           --from-env GH_TOKEN_FOR_ACTIONS_READ \
           emit-masks
 
+        # Unset secrets not needed by the selected backend so a
+        # compromised agent cannot read credentials for other providers.
+        ALL_SECRET_VARS="ANTHROPIC_AUTH_TOKEN ANTHROPIC_API_KEY CODEX_AUTH_JSON CLAUDE_CODE_OAUTH_TOKEN"
+        NEEDED_VARS=""
+        while IFS='=' read -r _ value; do
+          NEEDED_VARS="$NEEDED_VARS $value"
+        done < <(grep '^secret_' "$RUNNER_TEMP/backend.env")
+        for var in $ALL_SECRET_VARS; do
+          case " $NEEDED_VARS " in
+            *" $var "*) ;;  # keep
+            *) unset "$var" ;;
+          esac
+        done
+
         # Background progress watcher + agent run
         uv run --project "$BOT_RUNNER_ROOT" python -m bot.agent_logs watch \
           --newer-than "$FINAL_TASK_FILE" --interval 30 \

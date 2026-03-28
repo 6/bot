@@ -43,8 +43,21 @@ def test_emit_masks_outputs_commands_for_codex_auth() -> None:
     assert result.returncode == 0
     assert "::add-mask::eyJ-access" in result.stdout
     assert "::add-mask::rt-refresh" in result.stdout
-    assert '"access_token": "eyJ-access"' not in result.stdout
-    assert json.dumps(managed_auth_payload()) not in result.stdout
+    # Raw JSON is now included as a mask (previously excluded — see
+    # test_emit_masks_masks_raw_json_secret for the positive assertion).
+    assert f"::add-mask::{json.dumps(managed_auth_payload())}" in result.stdout
+
+
+def test_emit_masks_masks_raw_json_secret() -> None:
+    """Raw JSON string must be registered as a mask so it can't leak in logs."""
+    raw_json = json.dumps(managed_auth_payload())
+    result = run(
+        ["--from-env", "CODEX_AUTH_JSON", "emit-masks"],
+        {"CODEX_AUTH_JSON": raw_json},
+    )
+
+    assert result.returncode == 0
+    assert f"::add-mask::{raw_json}" in result.stdout
 
 
 def test_emit_masks_outputs_commands_for_api_key() -> None:
@@ -124,6 +137,37 @@ def test_scan_files_fails_on_base64_encoded_json_token_leak(tmp_path: Path) -> N
     encoded = base64.b64encode(refresh_token.encode()).decode()
     output = tmp_path / "leak.log"
     output.write_text(f"exfiltrated: {encoded}")
+
+    result = run(
+        ["--from-env", "CODEX_AUTH_JSON", "scan-files", str(output)],
+        {"CODEX_AUTH_JSON": json.dumps(payload)},
+    )
+
+    assert result.returncode != 0
+    assert "potential backend secret leakage" in result.stderr
+
+
+def test_scan_files_fails_on_hex_encoded_leak(tmp_path: Path) -> None:
+    secret = "mm-secret-key"
+    hex_encoded = secret.encode().hex()
+    output = tmp_path / "leak.log"
+    output.write_text(f"exfiltrated: {hex_encoded}")
+
+    result = run(
+        ["--from-env", "MINIMAX_API_KEY", "scan-files", str(output)],
+        {"MINIMAX_API_KEY": secret},
+    )
+
+    assert result.returncode != 0
+    assert "potential backend secret leakage" in result.stderr
+
+
+def test_scan_files_fails_on_hex_encoded_json_token_leak(tmp_path: Path) -> None:
+    payload = managed_auth_payload()
+    access_token = payload["tokens"]["access_token"]
+    hex_encoded = access_token.encode().hex()
+    output = tmp_path / "leak.log"
+    output.write_text(f"exfiltrated: {hex_encoded}")
 
     result = run(
         ["--from-env", "CODEX_AUTH_JSON", "scan-files", str(output)],
