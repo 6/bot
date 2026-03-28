@@ -59,7 +59,6 @@ Trusted ref modes:
 - `src/bot/` — Python helpers for backend resolution, runtime setup, leak scanning, and secret validation
 - `tests/` — unit coverage for the control-plane helpers
 - `worker/github-webhook/` — Cloudflare Worker ingress for GitHub App webhooks
-- `infra/cloudflare/` — small Terraform wrapper for the Worker route
 
 ## Required Repo Configuration
 

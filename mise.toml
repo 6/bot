@@ -17,4 +17,4 @@ run = "uv run pywrangler dev"
 
 [tasks.worker-webhook-deploy]
 dir = "worker/github-webhook"
-run = "uv run pywrangler deploy"
+run = "test -n \"$CLOUDFLARE_WORKER_NAME\" && uv run pywrangler deploy --name \"$CLOUDFLARE_WORKER_NAME\""

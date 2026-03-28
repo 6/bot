@@ -38,13 +38,23 @@ cd worker/github-webhook
 uv sync --group dev
 ```
 
+For local development, put worker-only secrets in a gitignored `.dev.vars` file next to `wrangler.toml`.
+
+Example:
+
+```dotenv
+GITHUB_WEBHOOK_SECRET=replace-me
+REMOTE_BOT_WORKFLOW_TOKEN=replace-me
+```
+
 Useful commands:
 
 ```bash
 uv run ruff check src tests
 uv run pytest -q
 uv run pywrangler dev
-uv run pywrangler deploy
+export CLOUDFLARE_WORKER_NAME=replace-me
+uv run pywrangler deploy --name "$CLOUDFLARE_WORKER_NAME"
 ```
 
 Or from the repo root with `mise` tasks:
@@ -53,6 +63,7 @@ Or from the repo root with `mise` tasks:
 mise run worker-webhook-sync
 mise run worker-webhook-check
 mise run worker-webhook-dev
+export CLOUDFLARE_WORKER_NAME=replace-me
 mise run worker-webhook-deploy
 ```
 
@@ -67,6 +78,15 @@ Notes:
 - `REMOTE_BOT_WORKFLOW_TOKEN` is the current bridge credential used by the Worker to trigger `workflow_dispatch` on `6/bot`.
 - This token lives only in the Worker environment. Source repos should not need their own dispatch token in the webhook model.
 - Long term, this token can be replaced by GitHub App installation-token minting inside the Worker if you want to remove it entirely.
+
+For deployed environments, store these as Cloudflare Worker secrets, not in `wrangler.toml`.
+
+Examples:
+
+```bash
+npx wrangler secret put GITHUB_WEBHOOK_SECRET
+npx wrangler secret put REMOTE_BOT_WORKFLOW_TOKEN
+```
 
 ## Non-Secret Configuration
 
@@ -91,3 +111,33 @@ Configure the GitHub App to send at least:
 - `Issue comment` events
 
 `ping` events are accepted automatically and can be used to validate wiring.
+
+## Deployment Notes
+
+Authentication for deploys is separate from runtime secrets.
+
+Use one of:
+- `wrangler login` / `pywrangler deploy` for manual local deploys
+- or `CLOUDFLARE_API_TOKEN` plus `CLOUDFLARE_ACCOUNT_ID` in CI for automated deploys
+
+The checked-in Worker name is only a placeholder. Deploy the real public Worker name with:
+
+```bash
+export CLOUDFLARE_WORKER_NAME=replace-me
+uv run pywrangler deploy --name "$CLOUDFLARE_WORKER_NAME"
+```
+
+Recommended GitHub Actions secret:
+- `CLOUDFLARE_WORKER_NAME`
+- optional: `CLOUDFLARE_WORKERS_SUBDOMAIN` for masking the derived `workers.dev` URL in deploy logs
+
+This project is configured with:
+- `workers_dev = true`
+- `preview_urls = false`
+
+That means:
+- the Worker deploys to your account `workers.dev` subdomain
+- the public script name comes from `--name` at deploy time, not from the checked-in placeholder
+- preview URLs stay disabled
+
+Terraform is not used for this `workers.dev` deployment path. If you later move to a custom domain or Cloudflare routes, add that infrastructure separately.

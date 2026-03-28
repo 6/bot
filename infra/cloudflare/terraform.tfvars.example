@@ -1,3 +1,0 @@
-zone_id               = "your-zone-id"
-workers_route_pattern = "bot-webhook.example.com/*"
-worker_script_name    = "bot-github-webhook"
