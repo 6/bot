@@ -34,7 +34,7 @@ This repo is public by design, but it is meant to be tightly controlled:
 - `main` is the only branch intended for normal operation
 - all model secrets stay in this repo, never in target repos
 - workflows are triggered via `workflow_dispatch`, which requires `Actions: write` on `6/bot` — a narrower grant than `Contents: write` needed by `repository_dispatch`
-- source repos use a dedicated `BOT_CONTROL_REPO_TOKEN` scoped to `6/bot` with `Actions: write` only
+- source repos use a dedicated `REMOTE_BOT_WORKFLOW_TOKEN` scoped to `6/bot` with `Actions: write` only
 - only explicitly allowlisted source repos may dispatch work here
 - only branch/tag refs are accepted; `refs/pull/*` is rejected
 - the requested `target_sha` must still match the trusted ref contract for the requested operation
@@ -42,7 +42,7 @@ This repo is public by design, but it is meant to be tightly controlled:
 Important:
 - allowlisting a repo means you trust its checked-out code to run under this control plane
 - target repos must gate dispatch on their own side too; `6/bot` is a second line of defense, not the first
-- the `BOT_CONTROL_REPO_TOKEN` should be scoped only to `6/bot` with `Actions: write`; do not grant `Contents: write`
+- the `REMOTE_BOT_WORKFLOW_TOKEN` should be scoped only to `6/bot` with `Actions: write`; do not grant `Contents: write`
 
 Trusted ref modes:
 - remote agent execution may target a trusted branch/tag ref and run at the requested SHA
@@ -170,7 +170,7 @@ The target repo should keep its own orchestration and use `6/bot` only for privi
 Minimum integration pieces:
 
 1. A workflow or action in the target repo that decides when a remote agent run is allowed.
-2. A dispatch step that calls the `workflow_dispatch` API on `6/bot` using a `BOT_CONTROL_REPO_TOKEN` scoped to `6/bot` with `Actions: write`.
+2. A dispatch step that calls the `workflow_dispatch` API on `6/bot` using a `REMOTE_BOT_WORKFLOW_TOKEN` scoped to `6/bot` with `Actions: write`.
 3. An input artifact containing at least:
    - `final-task.md`
    - optionally `task.md`
@@ -246,7 +246,7 @@ When integrating a new repo:
 - keep all model secrets in `6/bot`
 - keep repo-specific prompts, setup, trust policy, and verification in the target repo
 - keep repo-specific publish policy in the target repo, even if `6/bot` executes the final privileged mutation
-- use a `BOT_CONTROL_REPO_TOKEN` secret scoped to `6/bot` with `Actions: write` only — never `Contents: write`
+- use a `REMOTE_BOT_WORKFLOW_TOKEN` secret scoped to `6/bot` with `Actions: write` only — never `Contents: write`
 - gate dispatch on trusted refs before contacting `6/bot`
 - avoid dispatching PR head refs from untrusted forks
 - prefer slash-command or maintainer-only triggers over broad public comment triggers
