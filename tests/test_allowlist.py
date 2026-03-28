@@ -40,3 +40,25 @@ def test_cli_rejects_unlisted_repo(tmp_path: Path) -> None:
 
     assert result.returncode != 0
     assert "not allowed" in result.stderr
+
+
+def test_cli_print_csv(tmp_path: Path) -> None:
+    config = tmp_path / "allowlist.toml"
+    config.write_text('allowed_repositories = ["6/nitrocop", "6/another"]\n')
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "bot.allowlist",
+            "--config",
+            str(config),
+            "print-csv",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert result.stdout.strip() == "6/nitrocop,6/another"

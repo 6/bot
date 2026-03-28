@@ -1,6 +1,14 @@
 name: Deploy Webhook
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/deploy-webhook.yml
+      - config/allowlist.toml
+      - src/bot/allowlist.py
+      - workers/github-webhook/**
   workflow_dispatch:
 
 jobs:
@@ -44,10 +52,18 @@ jobs:
             echo "::add-mask::${CLOUDFLARE_WORKER_NAME}.${CLOUDFLARE_WORKERS_SUBDOMAIN}.workers.dev"
           fi
 
+      - name: Resolve allowlist
+        run: |
+          echo "ALLOWLIST_CSV=$(uv run python -m bot.allowlist print-csv)" >> "$GITHUB_ENV"
+
       - name: Sync worker dependencies
         working-directory: workers/github-webhook
         run: uv sync --frozen --group dev
 
       - name: Deploy webhook worker
         working-directory: workers/github-webhook
-        run: uv run pywrangler deploy --name "$CLOUDFLARE_WORKER_NAME" --var "GH_APP_ID:$GH_APP_ID"
+        run: |
+          uv run pywrangler deploy \
+            --name "$CLOUDFLARE_WORKER_NAME" \
+            --var "GH_APP_ID:$GH_APP_ID" \
+            --var "ALLOWED_REPOSITORIES:$ALLOWLIST_CSV"

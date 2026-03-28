@@ -46,6 +46,7 @@ Example:
 GH_APP_ID=replace-me
 GITHUB_WEBHOOK_SECRET=replace-me
 GH_APP_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----"
+ALLOWED_REPOSITORIES=6/nitrocop
 ```
 
 Useful commands:
@@ -55,7 +56,9 @@ uv run ruff check src tests
 uv run pytest -q
 uv run pywrangler dev
 export CLOUDFLARE_WORKER_NAME=replace-me
-uv run pywrangler deploy --name "$CLOUDFLARE_WORKER_NAME"
+export GH_APP_ID=replace-me
+export ALLOWLIST_CSV=$(uv run --project ../.. python -m bot.allowlist print-csv)
+uv run pywrangler deploy --name "$CLOUDFLARE_WORKER_NAME" --var "GH_APP_ID:$GH_APP_ID" --var "ALLOWED_REPOSITORIES:$ALLOWLIST_CSV"
 ```
 
 Or from the repo root with `mise` tasks:
@@ -65,23 +68,28 @@ mise run worker-webhook-sync
 mise run worker-webhook-check
 mise run worker-webhook-dev
 export CLOUDFLARE_WORKER_NAME=replace-me
+export GH_APP_ID=replace-me
 mise run worker-webhook-deploy
 ```
 
-## Required Cloudflare Secrets
+## Required Worker Runtime Config
 
-Set these in the Worker environment:
+Non-secret Worker config:
 - `GH_APP_ID`
+- `ALLOWED_REPOSITORIES`
+
+Worker secrets:
 - `GH_APP_PRIVATE_KEY`
 - `GITHUB_WEBHOOK_SECRET`
 
 Notes:
-- `GH_APP_ID` is the GitHub App identifier used to mint installation tokens.
+- `GH_APP_ID` is the GitHub App identifier used to mint installation tokens and is injected at deploy time as a normal Worker var.
+- `ALLOWED_REPOSITORIES` is injected at deploy time from the canonical `config/allowlist.toml`.
 - `GH_APP_PRIVATE_KEY` is the GitHub App private key used by the Worker to mint installation tokens.
 - `GITHUB_WEBHOOK_SECRET` must match the webhook secret configured on the GitHub App.
 - The Worker mints a GitHub App installation token per request and uses that token to trigger `workflow_dispatch` on `6/bot`.
 
-For deployed environments, store these as Cloudflare Worker secrets, not in `wrangler.toml`.
+For deployed environments, store only the secrets as Cloudflare Worker secrets, not in `wrangler.toml`.
 
 Examples:
 
@@ -98,17 +106,16 @@ The editable non-secret config lives in `wrangler.toml`:
 - `DISPATCH_WORKFLOW`
 - `WORKFLOW_REF`
 - `GITHUB_API_BASE`
-- `ALLOWED_REPOSITORIES`
 - `ALLOWED_ASSOCIATIONS`
 - `ALLOWED_COMMANDS`
 
-For now, the Worker allowlist should stay aligned with `config/allowlist.toml`.
+The repository allowlist comes from `config/allowlist.toml` and is passed to the Worker at deploy time.
 
 ## GitHub App Setup
 
-Point the GitHub App webhook URL at this Worker route, for example:
+Point the GitHub App webhook URL at the deployed Worker URL:
 
-`https://bot-webhook.example.com/github/webhook`
+`https://<worker-name>.<workers-subdomain>.workers.dev/github/webhook`
 
 Configure the GitHub App to send at least:
 - `Issue comment` events
@@ -128,7 +135,8 @@ The checked-in Worker name is only a placeholder. Deploy the real public Worker 
 ```bash
 export CLOUDFLARE_WORKER_NAME=replace-me
 export GH_APP_ID=replace-me
-uv run pywrangler deploy --name "$CLOUDFLARE_WORKER_NAME" --var "GH_APP_ID:$GH_APP_ID"
+export ALLOWLIST_CSV=$(uv run --project ../.. python -m bot.allowlist print-csv)
+uv run pywrangler deploy --name "$CLOUDFLARE_WORKER_NAME" --var "GH_APP_ID:$GH_APP_ID" --var "ALLOWED_REPOSITORIES:$ALLOWLIST_CSV"
 ```
 
 Recommended GitHub Actions secret:

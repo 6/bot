@@ -17,4 +17,4 @@ run = "uv run pywrangler dev"
 
 [tasks.worker-webhook-deploy]
 dir = "workers/github-webhook"
-run = "test -n \"$CLOUDFLARE_WORKER_NAME\" && test -n \"$GH_APP_ID\" && uv run pywrangler deploy --name \"$CLOUDFLARE_WORKER_NAME\" --var \"GH_APP_ID:$GH_APP_ID\""
+run = "test -n \"$CLOUDFLARE_WORKER_NAME\" && test -n \"$GH_APP_ID\" && ALLOWLIST_CSV=$(uv run --project ../.. python -m bot.allowlist print-csv) && uv run pywrangler deploy --name \"$CLOUDFLARE_WORKER_NAME\" --var \"GH_APP_ID:$GH_APP_ID\" --var \"ALLOWED_REPOSITORIES:$ALLOWLIST_CSV\""

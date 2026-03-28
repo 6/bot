@@ -37,6 +37,7 @@ def main() -> int:
 
     check = subparsers.add_parser("check-repo", help="Fail if the source repo is not allowlisted")
     check.add_argument("source_repo")
+    subparsers.add_parser("print-csv", help="Print the allowlist as a comma-separated string")
 
     args = parser.parse_args()
 
@@ -57,6 +58,10 @@ def main() -> int:
             )
             return 1
         print(args.source_repo)
+        return 0
+
+    if args.command == "print-csv":
+        print(",".join(allowed))
         return 0
 
     return 1
