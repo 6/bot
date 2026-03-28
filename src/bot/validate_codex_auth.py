@@ -7,6 +7,8 @@ across CLI versions.
 """
 
 import argparse
+import base64
+import binascii
 import json
 import os
 import sys
@@ -42,6 +44,36 @@ def _parse_timestamp(raw: str) -> datetime:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(timezone.utc)
+
+
+def _format_timestamp(value: datetime) -> str:
+    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _parse_access_token_expiry(raw: str) -> datetime | None:
+    if not _nonempty_string(raw):
+        return None
+
+    parts = raw.strip().split(".")
+    if len(parts) != 3:
+        return None
+
+    payload = parts[1]
+    payload += "=" * (-len(payload) % 4)
+
+    try:
+        decoded = base64.urlsafe_b64decode(payload.encode("ascii"))
+        claims = json.loads(decoded)
+    except (binascii.Error, UnicodeDecodeError, json.JSONDecodeError, ValueError):
+        return None
+
+    exp = claims.get("exp")
+    if exp is None:
+        return None
+    if not isinstance(exp, (int, float)):
+        raise ValueError("tokens.access_token exp claim is not numeric")
+
+    return datetime.fromtimestamp(exp, tz=timezone.utc)
 
 
 def _load_env(var_name: str):
@@ -81,8 +113,15 @@ def validate_auth(data: dict, max_age_days: int) -> str:
     if not _nonempty_string(account_id):
         _warn("tokens.account_id is missing or empty")
 
-    refreshed_at = _parse_timestamp(last_refresh)
     now = datetime.now(timezone.utc)
+    expires_at = _parse_access_token_expiry(access_token)
+    if expires_at is not None:
+        if now >= expires_at:
+            raise ValueError(f"tokens.access_token appears expired at {_format_timestamp(expires_at)}")
+        if expires_at - now <= timedelta(hours=1):
+            _warn(f"tokens.access_token expires soon at {_format_timestamp(expires_at)}")
+
+    refreshed_at = _parse_timestamp(last_refresh)
     age = now - refreshed_at
     max_age = timedelta(days=max_age_days)
     if age > max_age:

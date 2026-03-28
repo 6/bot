@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import os
 import subprocess
@@ -9,6 +10,20 @@ from datetime import datetime, timedelta, timezone
 
 def iso_days_ago(days: int) -> str:
     return (datetime.now(timezone.utc) - timedelta(days=days)).isoformat().replace("+00:00", "Z")
+
+
+def make_jwt(exp_delta_seconds: int) -> str:
+    header = {"alg": "none", "typ": "JWT"}
+    payload = {
+        "sub": "test-user",
+        "exp": int((datetime.now(timezone.utc) + timedelta(seconds=exp_delta_seconds)).timestamp()),
+    }
+
+    def encode(data: dict) -> str:
+        raw = json.dumps(data, separators=(",", ":")).encode("utf-8")
+        return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+    return f"{encode(header)}.{encode(payload)}.signature"
 
 
 def run(payload: dict | None = None, max_age_days: int = 7) -> subprocess.CompletedProcess[str]:
@@ -131,3 +146,20 @@ def test_rejects_stale_last_refresh() -> None:
 
     assert result.returncode != 0
     assert "last_refresh is stale" in result.stderr
+
+
+def test_rejects_expired_access_token() -> None:
+    result = run(
+        {
+            "OPENAI_API_KEY": None,
+            "tokens": {
+                "access_token": make_jwt(-60),
+                "refresh_token": "rt-refresh",
+                "account_id": "e7-account",
+            },
+            "last_refresh": iso_days_ago(1),
+        }
+    )
+
+    assert result.returncode != 0
+    assert "tokens.access_token appears expired" in result.stderr
