@@ -36,7 +36,6 @@ def test_build_installation_token_request_uses_app_jwt() -> None:
     _, private_key = rsa.newkeys(512)
     settings = Settings(
         allowed_associations=("OWNER",),
-        allowed_commands=("/6bot repair",),
         allowed_repositories=("6/nitrocop",),
         bot_control_repo="6/bot",
         github_app_id="12345",

@@ -8,4 +8,3 @@ preview_urls = false
 [vars]
 BOT_CONTROL_REPO = "6/bot"
 ALLOWED_ASSOCIATIONS = "OWNER,MEMBER,COLLABORATOR"
-ALLOWED_COMMANDS = "/6bot repair,/6bot fix"

@@ -8,7 +8,6 @@ from github_webhook.intake import DispatchRequest
 def test_build_workflow_dispatch_request_uses_expected_contract() -> None:
     settings = Settings(
         allowed_associations=("OWNER",),
-        allowed_commands=("/6bot",),
         allowed_repositories=("6/nitrocop",),
         bot_control_repo="6/bot",
         github_app_id="12345",

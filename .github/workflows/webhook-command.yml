@@ -1,5 +1,5 @@
-name: Webhook Command
-run-name: webhook-command ${{ inputs.request_id }}
+name: Webhook Trigger
+run-name: webhook-trigger ${{ inputs.request_id }}
 
 permissions:
   contents: read
@@ -65,13 +65,13 @@ jobs:
               "source_name": source_name,
               "event_name": payload["event_name"],
               "event_action": payload["event_action"],
-              "command": payload["command"],
+              "trigger_kind": payload["trigger_kind"],
+              "subject_kind": payload["subject_kind"],
               "requested_by": payload["requested_by"],
               "requested_by_association": payload["requested_by_association"],
               "issue_number": str(payload["issue_number"]),
-              "comment_id": str(payload["comment_id"]),
               "delivery_id": payload.get("delivery_id", ""),
-              "comment_url": payload.get("comment_url", ""),
+              "request_url": payload.get("request_url", ""),
           }
           for key, value in outputs.items():
               safe = str(value).replace("\n", "").replace("\r", "")
@@ -94,8 +94,8 @@ jobs:
         env:
           INPUT_PAYLOAD: ${{ inputs.payload }}
         run: |
-          mkdir -p "$RUNNER_TEMP/webhook-command"
-          printf '%s' "$INPUT_PAYLOAD" > "$RUNNER_TEMP/webhook-command/request.json"
+          mkdir -p "$RUNNER_TEMP/webhook-trigger"
+          printf '%s' "$INPUT_PAYLOAD" > "$RUNNER_TEMP/webhook-trigger/request.json"
 
       - name: Summarize webhook request
         env:
@@ -103,29 +103,32 @@ jobs:
           SOURCE_REPO: ${{ steps.request.outputs.source_repo }}
           EVENT_NAME: ${{ steps.request.outputs.event_name }}
           EVENT_ACTION: ${{ steps.request.outputs.event_action }}
-          COMMAND: ${{ steps.request.outputs.command }}
+          TRIGGER_KIND: ${{ steps.request.outputs.trigger_kind }}
+          SUBJECT_KIND: ${{ steps.request.outputs.subject_kind }}
           REQUESTED_BY: ${{ steps.request.outputs.requested_by }}
           REQUESTED_BY_ASSOCIATION: ${{ steps.request.outputs.requested_by_association }}
           ISSUE_NUMBER: ${{ steps.request.outputs.issue_number }}
-          COMMENT_ID: ${{ steps.request.outputs.comment_id }}
           DELIVERY_ID: ${{ steps.request.outputs.delivery_id }}
-          COMMENT_URL: ${{ steps.request.outputs.comment_url }}
+          REQUEST_URL: ${{ steps.request.outputs.request_url }}
         run: |
           {
-            echo "## Webhook command"
+            echo "## Webhook trigger"
             echo
             echo "- Request ID: $REQUEST_ID"
             echo "- Source repo: $SOURCE_REPO"
             echo "- Event: $EVENT_NAME / $EVENT_ACTION"
-            echo "- Command: $COMMAND"
-            echo "- Requested by: $REQUESTED_BY ($REQUESTED_BY_ASSOCIATION)"
-            echo "- Issue/PR number: $ISSUE_NUMBER"
-            echo "- Comment ID: $COMMENT_ID"
+            echo "- Trigger: $TRIGGER_KIND on $SUBJECT_KIND"
+            if [ -n "$REQUESTED_BY_ASSOCIATION" ]; then
+              echo "- Requested by: $REQUESTED_BY ($REQUESTED_BY_ASSOCIATION)"
+            else
+              echo "- Requested by: $REQUESTED_BY"
+            fi
+            echo "- Issue or PR number: $ISSUE_NUMBER"
             if [ -n "$DELIVERY_ID" ]; then
               echo "- Delivery ID: $DELIVERY_ID"
             fi
-            if [ -n "$COMMENT_URL" ]; then
-              echo "- Comment URL: $COMMENT_URL"
+            if [ -n "$REQUEST_URL" ]; then
+              echo "- Request URL: $REQUEST_URL"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -170,6 +173,6 @@ jobs:
       - name: Upload webhook payload
         uses: actions/upload-artifact@v6
         with:
-          name: webhook-command-${{ steps.request.outputs.request_id }}
-          path: $RUNNER_TEMP/webhook-command/request.json
+          name: webhook-trigger-${{ steps.request.outputs.request_id }}
+          path: $RUNNER_TEMP/webhook-trigger/request.json
           retention-days: 7

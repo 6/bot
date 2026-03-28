@@ -26,7 +26,6 @@ def _split_csv(value: str) -> tuple[str, ...]:
 @dataclass(frozen=True)
 class Settings:
     allowed_associations: tuple[str, ...]
-    allowed_commands: tuple[str, ...]
     allowed_repositories: tuple[str, ...]
     bot_control_repo: str
     github_app_id: str
@@ -41,7 +40,6 @@ def load_settings(env: object) -> Settings:
         "GH_APP_PRIVATE_KEY": _read_env(env, "GH_APP_PRIVATE_KEY"),
         "ALLOWED_REPOSITORIES": _read_env(env, "ALLOWED_REPOSITORIES"),
         "ALLOWED_ASSOCIATIONS": _read_env(env, "ALLOWED_ASSOCIATIONS"),
-        "ALLOWED_COMMANDS": _read_env(env, "ALLOWED_COMMANDS"),
         "GITHUB_WEBHOOK_SECRET": _read_env(env, "GITHUB_WEBHOOK_SECRET"),
     }
     missing = sorted(name for name, value in required.items() if value is None)
@@ -52,7 +50,6 @@ def load_settings(env: object) -> Settings:
         allowed_associations=tuple(
             value.upper() for value in _split_csv(required["ALLOWED_ASSOCIATIONS"] or "")
         ),
-        allowed_commands=_split_csv(required["ALLOWED_COMMANDS"] or ""),
         allowed_repositories=_split_csv(required["ALLOWED_REPOSITORIES"] or ""),
         bot_control_repo=required["BOT_CONTROL_REPO"] or "",
         github_app_id=required["GH_APP_ID"] or "",

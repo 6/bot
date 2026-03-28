@@ -4,7 +4,7 @@ Thin Cloudflare Worker front door for `6/bot`.
 
 This worker is intentionally small:
 - validate the GitHub webhook signature
-- accept a small set of bot commands from allowlisted repositories
+- accept a small set of bot triggers from allowlisted repositories
 - apply simple repo/commenter policy
 - trigger a `workflow_dispatch` run in `6/bot`
 
@@ -18,15 +18,18 @@ Supported today:
 - `POST /github/webhook`
 - `GET /healthz`
 - GitHub `ping`
-- GitHub `issue_comment` on pull requests and issues
-- slash commands on the first non-empty line:
-  - `/6bot repair`
-  - `/6bot fix`
+- GitHub `issue_comment` on pull requests and issues when the first non-empty line starts with `@<repo-owner>`
+- GitHub `issues` with `action == assigned` when the repo owner assigns the issue to themself
 
 The worker currently dispatches to:
 - `webhook-command.yml`
 
 That workflow is the first landing point inside `6/bot`. It validates the request, then forwards it into the source repo's `bot-command.yml` workflow with a GitHub App token.
+
+For `6/*` repos today, that means:
+- PR comment beginning with `@6` triggers the PR repair path
+- Cop-tracker issue comment beginning with `@6` triggers the cop-fix path
+- Assigning a cop-tracker issue to `@6` triggers the cop-fix path and uses the issue title/body as the prompt
 
 ## Local Setup
 
@@ -104,7 +107,6 @@ npx wrangler secret put GITHUB_WEBHOOK_SECRET --name "$CLOUDFLARE_WORKER_NAME"
 The editable non-secret config lives in `wrangler.toml`:
 - `BOT_CONTROL_REPO`
 - `ALLOWED_ASSOCIATIONS`
-- `ALLOWED_COMMANDS`
 
 The repository allowlist comes from `config/allowlist.toml` and is passed to the Worker at deploy time.
 
@@ -116,6 +118,7 @@ Point the GitHub App webhook URL at the deployed Worker URL:
 
 Configure the GitHub App to send at least:
 - `Issue comment` events
+- `Issues` events
 
 `ping` events are accepted automatically and can be used to validate wiring.
 

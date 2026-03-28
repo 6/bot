@@ -10,7 +10,7 @@ This repo is intentionally small. It owns:
 - backend selection and secret injection
 - generic privileged GitHub write operations for allowlisted repos
 - remote artifact handoff back to the calling repo
-- webhook ingress for comment-driven bot commands
+- webhook ingress for mention- and assignment-driven bot triggers
 
 This repo does **not** own target-repo orchestration. Each target repo decides:
 - when to run an agent
@@ -22,9 +22,9 @@ This repo does **not** own target-repo orchestration. Each target repo decides:
 ## Mental Model
 
 - `6/bot` is a **generic executor**, not a reusable workflow library for repo-specific CI.
-- The Cloudflare Worker is the standard external ingress for command-driven bot requests.
+- The Cloudflare Worker is the standard external ingress for webhook-driven bot requests.
 - Inside `6/bot`, GitHub Actions still use `workflow_dispatch` as the internal handoff from the Worker into the executor workflows.
-- The webhook landing workflow forwards validated bot commands into the source repo's `bot-command.yml` workflow using a GitHub App token.
+- The webhook landing workflow forwards validated bot triggers into the source repo's `bot-command.yml` workflow using a GitHub App token.
 - `6/bot` checks that the source repo is explicitly allowlisted, then checks out the target repo at the requested SHA and either runs the selected backend or performs a generic write request with credentials that live only here.
 - Target repos may expose an optional `.github/actions/bot-setup/action.yml` hook for language/toolchain setup. That hook runs inside the target repo checkout, so only allow trusted repos and trusted refs.
 - The remote agent writes runtime artifacts and a patch. The calling repo downloads those artifacts and applies the patch locally.
@@ -36,7 +36,7 @@ This repo is public by design, but it is meant to be tightly controlled:
 - pull requests and issues should stay disabled
 - `main` is the only branch intended for normal operation
 - all model secrets stay in this repo, never in target repos
-- the Cloudflare Worker validates webhook signatures and routes commands into `6/bot`
+- the Cloudflare Worker validates webhook signatures and routes triggers into `6/bot`
 - the Worker holds GitHub App credentials and mints installation tokens per request
 - target/source repos should not need a dispatch token in the webhook model
 - only explicitly allowlisted source repos may dispatch work here
@@ -191,7 +191,7 @@ Minimum integration pieces:
 1. Install the GitHub App on the target repo.
 2. Point GitHub App webhooks at the Cloudflare Worker route.
 3. Add a repo-local `.github/workflows/bot-command.yml` receiver that accepts the standard `request_id`, `source_repo`, and `payload` inputs.
-4. Make the target repo’s comments/commands and trust policy compatible with the Worker’s allowlist and command parser.
+4. Make the target repo’s trigger routing and trust policy compatible with the Worker’s mention/assignment parser.
 5. Keep repo-specific workflows responsible for prompt generation, verification, and any follow-on execution after `6/bot` runs.
 
 If the target repo also wants `6/bot` to own privileged publish/mutation steps, add a second bridge for repo-write requests instead of doing those writes locally.
