@@ -26,8 +26,20 @@ def _load_secret(var_name: str):
     return raw, parsed
 
 
+def _base64_variants(value: str) -> list[str]:
+    import base64
+
+    encoded = base64.b64encode(value.encode()).decode()
+    variants = [encoded]
+    # Also add URL-safe base64
+    url_encoded = base64.urlsafe_b64encode(value.encode()).decode()
+    if url_encoded != encoded:
+        variants.append(url_encoded)
+    return variants
+
+
 def _collect_values(
-    var_name: str, raw_secret: str, parsed, *, include_raw: bool
+    var_name: str, raw_secret: str, parsed, *, include_raw: bool, include_b64: bool = False,
 ) -> list[tuple[str, str]]:
     values = []
     if include_raw or not isinstance(parsed, dict):
@@ -44,6 +56,13 @@ def _collect_values(
                 value = tokens.get(key)
                 if _nonempty_string(value):
                     values.append((f"{var_name}:{key}", value))
+
+    if include_b64:
+        base_values = list(values)
+        for label, value in base_values:
+            if len(value) >= 8:
+                for b64 in _base64_variants(value):
+                    values.append((f"{label}:b64", b64))
 
     deduped = []
     seen = set()
@@ -83,7 +102,7 @@ def _read_patterns_file(path: str) -> list[str]:
 
 
 def _load_all_secrets(
-    var_names: list[str], ignore_missing: bool, *, include_raw: bool
+    var_names: list[str], ignore_missing: bool, *, include_raw: bool, include_b64: bool = False,
 ) -> list[tuple[str, str]]:
     values = []
     for var_name in var_names:
@@ -94,7 +113,7 @@ def _load_all_secrets(
                 continue
             raise
         values.extend(
-            _collect_values(var_name, raw, parsed, include_raw=include_raw)
+            _collect_values(var_name, raw, parsed, include_raw=include_raw, include_b64=include_b64)
         )
     return values
 
@@ -110,7 +129,7 @@ def emit_masks(var_names: list[str], ignore_missing: bool) -> int:
 
 
 def scan_files(var_names: list[str], ignore_missing: bool, patterns: list[str]) -> int:
-    secret_values = _load_all_secrets(var_names, ignore_missing, include_raw=True)
+    secret_values = _load_all_secrets(var_names, ignore_missing, include_raw=True, include_b64=True)
     if not secret_values:
         print("No backend secrets found to scan for.")
         return 0

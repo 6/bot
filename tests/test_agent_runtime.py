@@ -59,3 +59,28 @@ def test_profile_name_only_changes_root_directory() -> None:
     assert alpha["TASK_FILE"].replace("/alpha/", "/profile/") == beta["TASK_FILE"].replace("/beta/", "/profile/")
     assert alpha["AGENT_RUNTIME_ROOT"].endswith("/alpha")
     assert beta["AGENT_RUNTIME_ROOT"].endswith("/beta")
+
+
+def test_build_paths_rejects_path_traversal() -> None:
+    """Profile names with path traversal components must be rejected."""
+    import pytest
+
+    runner_temp = Path("/tmp/runner")
+    with pytest.raises(ValueError, match="[Ii]nvalid profile"):
+        agent_runtime.build_paths("../../etc", runner_temp)
+
+
+def test_build_paths_rejects_slash_in_profile() -> None:
+    """Profile names containing slashes must be rejected."""
+    import pytest
+
+    runner_temp = Path("/tmp/runner")
+    with pytest.raises(ValueError, match="[Ii]nvalid profile"):
+        agent_runtime.build_paths("foo/bar", runner_temp)
+
+
+def test_build_paths_accepts_valid_profile_names() -> None:
+    """Normal profile names with alphanumeric chars, dots, dashes, underscores should work."""
+    runner_temp = Path("/tmp/runner")
+    paths = agent_runtime.build_paths("my-task_v1.2", runner_temp)
+    assert paths["AGENT_RUNTIME_ROOT"] == "/tmp/runner/my-task_v1.2"

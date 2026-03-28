@@ -14,6 +14,7 @@ from pathlib import Path
 BOT_NAME = "6[bot]"
 BOT_EMAIL = "129682364+6[bot]@users.noreply.github.com"
 EXTRAHEADER_KEY = "http.https://github.com/.extraheader"
+MAX_OPERATIONS = 100
 ALLOWED_OPERATION_TYPES = {
     "comment_pr",
     "comment_issue",
@@ -57,7 +58,10 @@ def _branch_from_ref(target_ref: str) -> str:
 
 
 def _resolve_request_file(request_path: Path, relative_path: str, *, field: str) -> Path:
-    path = request_path.parent / relative_path
+    base = request_path.parent.resolve()
+    path = (base / relative_path).resolve()
+    if not path.is_relative_to(base):
+        raise ValueError(f"{field} escapes request directory: {relative_path}")
     if not path.is_file():
         raise ValueError(f"{field} file not found: {relative_path}")
     return path
@@ -139,6 +143,8 @@ def _load_request(request_path: Path) -> dict:
     operations = data.get("operations")
     if not isinstance(operations, list) or not operations:
         raise ValueError("request.operations must be a non-empty list")
+    if len(operations) > MAX_OPERATIONS:
+        raise ValueError(f"too many operations ({len(operations)} > {MAX_OPERATIONS})")
 
     for index, operation in enumerate(operations):
         if not isinstance(operation, dict):

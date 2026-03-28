@@ -9,6 +9,10 @@ on:
   repository_dispatch:
     types: [run_agent]
 
+concurrency:
+  group: remote-agent-${{ github.event.client_payload.source_repo }}
+  cancel-in-progress: false
+
 jobs:
   run:
     runs-on: ubuntu-24.04
@@ -59,15 +63,19 @@ jobs:
 
       - name: Validate source repo and target ref
         shell: bash
+        env:
+          SOURCE_REPO: ${{ steps.request.outputs.source_repo }}
+          SOURCE_OWNER: ${{ steps.request.outputs.source_owner }}
+          TARGET_REF: ${{ steps.request.outputs.target_ref }}
         run: |
-          uv run --project .bot python -m bot.allowlist check-repo "${{ steps.request.outputs.source_repo }}"
+          uv run --project .bot python -m bot.allowlist check-repo "$SOURCE_REPO"
 
-          if [ "${{ steps.request.outputs.source_owner }}" != "6" ]; then
+          if [ "$SOURCE_OWNER" != "6" ]; then
             echo "::error::6/bot only accepts dispatches for repositories owned by 6"
             exit 1
           fi
 
-          case "${{ steps.request.outputs.target_ref }}" in
+          case "$TARGET_REF" in
             refs/heads/*|refs/tags/*) ;;
             *)
               echo "::error::target_ref must be a refs/heads/* or refs/tags/* ref"
@@ -75,7 +83,7 @@ jobs:
               ;;
           esac
 
-          case "${{ steps.request.outputs.target_ref }}" in
+          case "$TARGET_REF" in
             refs/pull/*)
               echo "::error::pull-request refs are not allowed"
               exit 1
@@ -98,11 +106,14 @@ jobs:
       - name: Download source input artifact
         env:
           GH_TOKEN: ${{ steps.read-token.outputs.token }}
+          SOURCE_RUN_ID: ${{ steps.request.outputs.source_run_id }}
+          SOURCE_REPO: ${{ steps.request.outputs.source_repo }}
+          INPUT_ARTIFACT: ${{ steps.request.outputs.input_artifact }}
         run: |
           mkdir -p "$RUNNER_TEMP/remote-input"
-          gh run download "${{ steps.request.outputs.source_run_id }}" \
-            -R "${{ steps.request.outputs.source_repo }}" \
-            -n "${{ steps.request.outputs.input_artifact }}" \
+          gh run download "$SOURCE_RUN_ID" \
+            -R "$SOURCE_REPO" \
+            -n "$INPUT_ARTIFACT" \
             -D "$RUNNER_TEMP/remote-input"
 
       - uses: actions/checkout@v6
@@ -117,10 +128,13 @@ jobs:
 
       - name: Validate target SHA is contained in target ref
         shell: bash
+        env:
+          TARGET_REF: ${{ steps.request.outputs.target_ref }}
+          TARGET_SHA: ${{ steps.request.outputs.target_sha }}
         run: |
-          git fetch --no-tags origin "${{ steps.request.outputs.target_ref }}"
-          if ! git merge-base --is-ancestor "${{ steps.request.outputs.target_sha }}" FETCH_HEAD; then
-            echo "::error::target_sha is not contained in ${{ steps.request.outputs.target_ref }}"
+          git fetch --no-tags origin "$TARGET_REF"
+          if ! git merge-base --is-ancestor "$TARGET_SHA" FETCH_HEAD; then
+            echo "::error::target_sha is not contained in $TARGET_REF"
             exit 1
           fi
 
@@ -141,8 +155,10 @@ jobs:
           setup_config_json: ${{ steps.request.outputs.setup_config_json }}
 
       - name: Initialize runtime layout
+        env:
+          WORKFLOW_NAME: ${{ steps.request.outputs.workflow }}
         run: |
-          uv run --project .bot python -m bot.agent_runtime "${{ steps.request.outputs.workflow }}" \
+          uv run --project .bot python -m bot.agent_runtime "$WORKFLOW_NAME" \
             --runner-temp "${RUNNER_TEMP}" >> "$GITHUB_ENV"
 
       - name: Populate prompt files

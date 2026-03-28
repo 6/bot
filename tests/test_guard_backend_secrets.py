@@ -99,6 +99,41 @@ def test_scan_manifest_reads_patterns_from_file(tmp_path: Path) -> None:
     assert "No backend secret leakage" in result.stdout
 
 
+def test_scan_files_fails_on_base64_encoded_leak(tmp_path: Path) -> None:
+    import base64
+
+    secret = "mm-secret-key"
+    encoded = base64.b64encode(secret.encode()).decode()
+    output = tmp_path / "leak.log"
+    output.write_text(f"encoded: {encoded}")
+
+    result = run(
+        ["--from-env", "MINIMAX_API_KEY", "scan-files", str(output)],
+        {"MINIMAX_API_KEY": secret},
+    )
+
+    assert result.returncode != 0
+    assert "potential backend secret leakage" in result.stderr
+
+
+def test_scan_files_fails_on_base64_encoded_json_token_leak(tmp_path: Path) -> None:
+    import base64
+
+    payload = managed_auth_payload()
+    refresh_token = payload["tokens"]["refresh_token"]
+    encoded = base64.b64encode(refresh_token.encode()).decode()
+    output = tmp_path / "leak.log"
+    output.write_text(f"exfiltrated: {encoded}")
+
+    result = run(
+        ["--from-env", "CODEX_AUTH_JSON", "scan-files", str(output)],
+        {"CODEX_AUTH_JSON": json.dumps(payload)},
+    )
+
+    assert result.returncode != 0
+    assert "potential backend secret leakage" in result.stderr
+
+
 def test_ignore_missing_skips_absent_vars() -> None:
     result = run(
         [

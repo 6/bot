@@ -35,7 +35,15 @@ def build_paths_from_root(profile: str, root: Path) -> dict[str, str]:
     }
 
 
+def _validate_profile(profile: str) -> None:
+    import re
+
+    if not re.match(r'^[a-zA-Z0-9._-]+$', profile):
+        raise ValueError(f"Invalid profile name: {profile!r}")
+
+
 def build_paths(profile: str, runner_temp: Path) -> dict[str, str]:
+    _validate_profile(profile)
     return build_paths_from_root(profile, runner_temp / profile)
 
 

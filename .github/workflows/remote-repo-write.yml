@@ -9,6 +9,10 @@ on:
   repository_dispatch:
     types: [repo_write]
 
+concurrency:
+  group: remote-repo-write-${{ github.event.client_payload.source_repo }}
+  cancel-in-progress: false
+
 jobs:
   run:
     runs-on: ubuntu-24.04
@@ -57,15 +61,19 @@ jobs:
 
       - name: Validate source repo and target ref
         shell: bash
+        env:
+          SOURCE_REPO: ${{ steps.request.outputs.source_repo }}
+          SOURCE_OWNER: ${{ steps.request.outputs.source_owner }}
+          TARGET_REF: ${{ steps.request.outputs.target_ref }}
         run: |
-          uv run --project .bot python -m bot.allowlist check-repo "${{ steps.request.outputs.source_repo }}"
+          uv run --project .bot python -m bot.allowlist check-repo "$SOURCE_REPO"
 
-          if [ "${{ steps.request.outputs.source_owner }}" != "6" ]; then
+          if [ "$SOURCE_OWNER" != "6" ]; then
             echo "::error::6/bot only accepts dispatches for repositories owned by 6"
             exit 1
           fi
 
-          case "${{ steps.request.outputs.target_ref }}" in
+          case "$TARGET_REF" in
             refs/heads/*|refs/tags/*) ;;
             *)
               echo "::error::target_ref must be a refs/heads/* or refs/tags/* ref"
@@ -73,7 +81,7 @@ jobs:
               ;;
           esac
 
-          case "${{ steps.request.outputs.target_ref }}" in
+          case "$TARGET_REF" in
             refs/pull/*)
               echo "::error::pull-request refs are not allowed"
               exit 1
@@ -97,11 +105,14 @@ jobs:
       - name: Download source write artifact
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          SOURCE_RUN_ID: ${{ steps.request.outputs.source_run_id }}
+          SOURCE_REPO: ${{ steps.request.outputs.source_repo }}
+          INPUT_ARTIFACT: ${{ steps.request.outputs.input_artifact }}
         run: |
           mkdir -p "$RUNNER_TEMP/remote-write-input"
-          gh run download "${{ steps.request.outputs.source_run_id }}" \
-            -R "${{ steps.request.outputs.source_repo }}" \
-            -n "${{ steps.request.outputs.input_artifact }}" \
+          gh run download "$SOURCE_RUN_ID" \
+            -R "$SOURCE_REPO" \
+            -n "$INPUT_ARTIFACT" \
             -D "$RUNNER_TEMP/remote-write-input"
 
       - uses: actions/checkout@v6
@@ -118,15 +129,18 @@ jobs:
         id: write
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          SOURCE_REPO: ${{ steps.request.outputs.source_repo }}
+          TARGET_REF: ${{ steps.request.outputs.target_ref }}
+          TARGET_SHA: ${{ steps.request.outputs.target_sha }}
         run: |
           METADATA_FILE="$RUNNER_TEMP/remote-write-output/remote-repo-write-metadata.json"
           mkdir -p "$(dirname "$METADATA_FILE")"
           uv run --project .bot python -m bot.repo_write execute \
             --request-file "$RUNNER_TEMP/remote-write-input/request.json" \
             --repo-root "$PWD" \
-            --repo "${{ steps.request.outputs.source_repo }}" \
-            --target-ref "${{ steps.request.outputs.target_ref }}" \
-            --target-sha "${{ steps.request.outputs.target_sha }}" \
+            --repo "$SOURCE_REPO" \
+            --target-ref "$TARGET_REF" \
+            --target-sha "$TARGET_SHA" \
             --metadata-file "$METADATA_FILE" \
             >> "$GITHUB_OUTPUT"
 
