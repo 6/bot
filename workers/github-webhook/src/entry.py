@@ -7,7 +7,7 @@ from js import Object, Response, fetch as js_fetch
 from pyodide.ffi import to_js as _py_to_js
 from workers import WorkerEntrypoint
 
-from github_webhook.config import load_settings
+from github_webhook.config import DISPATCH_WORKFLOW, load_settings
 from github_webhook.dispatch import build_workflow_dispatch_request
 from github_webhook.github_app import build_installation_token_request
 from github_webhook.github_signature import verify_signature
@@ -127,7 +127,7 @@ class Default(WorkerEntrypoint):
                 {
                     "ok": True,
                     "request_id": dispatch_request.request_id,
-                    "workflow": settings.dispatch_workflow,
+                    "workflow": DISPATCH_WORKFLOW,
                     "source_repo": dispatch_request.source_repo,
                 },
             )

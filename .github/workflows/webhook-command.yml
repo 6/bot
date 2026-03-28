@@ -129,6 +129,44 @@ jobs:
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Generate source-repo workflow token
+        id: source-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: ${{ steps.request.outputs.source_owner }}
+          repositories: ${{ steps.request.outputs.source_name }}
+          permission-actions: write
+          permission-contents: read
+          permission-metadata: read
+
+      - name: Forward webhook command to source repo
+        env:
+          GH_TOKEN: ${{ steps.source-token.outputs.token }}
+          INPUT_PAYLOAD: ${{ inputs.payload }}
+          REQUEST_ID: ${{ steps.request.outputs.request_id }}
+          SOURCE_REPO: ${{ steps.request.outputs.source_repo }}
+        run: |
+          PAYLOAD_FILE="$RUNNER_TEMP/source-bot-command-dispatch.json"
+          python3 - <<'PY' > "$PAYLOAD_FILE"
+          import json
+          import os
+
+          payload = {
+              "ref": "main",
+              "inputs": {
+                  "request_id": os.environ["REQUEST_ID"],
+                  "source_repo": os.environ["SOURCE_REPO"],
+                  "payload": os.environ["INPUT_PAYLOAD"],
+              },
+          }
+          print(json.dumps(payload))
+          PY
+          gh api "repos/${{ steps.request.outputs.source_repo }}/actions/workflows/bot-command.yml/dispatches" \
+            --method POST \
+            --input "$PAYLOAD_FILE"
+
       - name: Upload webhook payload
         uses: actions/upload-artifact@v6
         with:

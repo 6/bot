@@ -24,6 +24,7 @@ This repo does **not** own target-repo orchestration. Each target repo decides:
 - `6/bot` is a **generic executor**, not a reusable workflow library for repo-specific CI.
 - The Cloudflare Worker is the standard external ingress for command-driven bot requests.
 - Inside `6/bot`, GitHub Actions still use `workflow_dispatch` as the internal handoff from the Worker into the executor workflows.
+- The webhook landing workflow forwards validated bot commands into the source repo's `bot-command.yml` workflow using a GitHub App token.
 - `6/bot` checks that the source repo is explicitly allowlisted, then checks out the target repo at the requested SHA and either runs the selected backend or performs a generic write request with credentials that live only here.
 - Target repos may expose an optional `.github/actions/bot-setup/action.yml` hook for language/toolchain setup. That hook runs inside the target repo checkout, so only allow trusted repos and trusted refs.
 - The remote agent writes runtime artifacts and a patch. The calling repo downloads those artifacts and applies the patch locally.
@@ -139,9 +140,11 @@ High-level flow:
 2. Check the source repo against `config/allowlist.toml`.
 3. Reject non-`6/*` repos.
 4. Record the distilled webhook request in the job summary.
-5. Upload the JSON payload as an artifact for follow-on routing/debugging.
+5. Mint a GitHub App token scoped to the source repo.
+6. Dispatch the source repo's `bot-command.yml` workflow with the original payload.
+7. Upload the JSON payload as an artifact for follow-on routing/debugging.
 
-This is the first landing point for the webhook ingress. It is intentionally generic and should stay free of target-repo business logic.
+This is the first landing point for the webhook ingress. It should stay generic and delegate repo-specific routing to the source repo.
 
 ## Source Repo Allowlist
 
@@ -187,8 +190,9 @@ Minimum integration pieces:
 
 1. Install the GitHub App on the target repo.
 2. Point GitHub App webhooks at the Cloudflare Worker route.
-3. Make the target repo’s comments/commands and trust policy compatible with the Worker’s allowlist and command parser.
-4. Keep repo-specific workflows responsible for prompt generation, verification, and any follow-on execution after `6/bot` runs.
+3. Add a repo-local `.github/workflows/bot-command.yml` receiver that accepts the standard `request_id`, `source_repo`, and `payload` inputs.
+4. Make the target repo’s comments/commands and trust policy compatible with the Worker’s allowlist and command parser.
+5. Keep repo-specific workflows responsible for prompt generation, verification, and any follow-on execution after `6/bot` runs.
 
 If the target repo also wants `6/bot` to own privileged publish/mutation steps, add a second bridge for repo-write requests instead of doing those writes locally.
 

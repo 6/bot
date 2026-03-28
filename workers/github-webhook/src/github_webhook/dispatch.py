@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
-from github_webhook.config import GITHUB_API_BASE, Settings
+from github_webhook.config import DISPATCH_WORKFLOW, GITHUB_API_BASE, Settings, WORKFLOW_REF
 from github_webhook.intake import DispatchRequest
 
 
@@ -19,7 +19,7 @@ def build_workflow_dispatch_request(
 ) -> WorkflowDispatchRequest:
     body = json.dumps(
         {
-            "ref": settings.workflow_ref,
+            "ref": WORKFLOW_REF,
             "inputs": {
                 "request_id": request.request_id,
                 "source_repo": request.source_repo,
@@ -39,7 +39,7 @@ def build_workflow_dispatch_request(
     return WorkflowDispatchRequest(
         url=(
             f"{GITHUB_API_BASE}/repos/{settings.bot_control_repo}/actions/workflows/"
-            f"{settings.dispatch_workflow}/dispatches"
+            f"{DISPATCH_WORKFLOW}/dispatches"
         ),
         headers=headers,
         body=body,

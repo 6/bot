@@ -18,7 +18,7 @@ Supported today:
 - `POST /github/webhook`
 - `GET /healthz`
 - GitHub `ping`
-- GitHub `issue_comment` on pull requests
+- GitHub `issue_comment` on pull requests and issues
 - slash commands on the first non-empty line:
   - `/6bot repair`
   - `/6bot fix`
@@ -26,7 +26,7 @@ Supported today:
 The worker currently dispatches to:
 - `webhook-command.yml`
 
-That workflow is just the first landing point inside `6/bot`. It records the request and keeps the control-plane boundary centralized.
+That workflow is the first landing point inside `6/bot`. It validates the request, then forwards it into the source repo's `bot-command.yml` workflow with a GitHub App token.
 
 ## Local Setup
 
@@ -103,8 +103,6 @@ npx wrangler secret put GITHUB_WEBHOOK_SECRET --name "$CLOUDFLARE_WORKER_NAME"
 
 The editable non-secret config lives in `wrangler.toml`:
 - `BOT_CONTROL_REPO`
-- `DISPATCH_WORKFLOW`
-- `WORKFLOW_REF`
 - `ALLOWED_ASSOCIATIONS`
 - `ALLOWED_COMMANDS`
 

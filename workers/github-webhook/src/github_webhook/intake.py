@@ -48,8 +48,7 @@ def extract_dispatch_request(
         raise IgnoreWebhook(f"repository is not allowlisted: {source_repo}")
 
     issue = _require_mapping(payload.get("issue"), field="issue")
-    if "pull_request" not in issue:
-        raise IgnoreWebhook("issue_comment is not attached to a pull request")
+    subject_kind = "pull_request" if "pull_request" in issue else "issue"
 
     comment = _require_mapping(payload.get("comment"), field="comment")
     comment_body = str(comment.get("body", ""))
@@ -97,13 +96,15 @@ def extract_dispatch_request(
         "requested_by_association": association,
         "command": command.name,
         "command_args": command.args,
+        "subject_kind": subject_kind,
         "comment_id": comment_id,
         "comment_body": comment_body,
         "comment_url": comment.get("html_url", ""),
         "issue_number": issue_number,
-        "pr_number": issue_number,
         "issue_url": issue.get("html_url", ""),
     }
+    if subject_kind == "pull_request":
+        request_payload["pr_number"] = issue_number
 
     return DispatchRequest(
         installation_id=installation_id,

@@ -13,11 +13,9 @@ def settings() -> Settings:
         allowed_commands=("/6bot repair", "/6bot fix"),
         allowed_repositories=("6/nitrocop",),
         bot_control_repo="6/bot",
-        dispatch_workflow="webhook-command.yml",
         github_app_id="12345",
         github_app_private_key="pem",
         webhook_secret="secret",
-        workflow_ref="main",
     )
 
 
@@ -52,6 +50,7 @@ def test_extract_dispatch_request_from_pull_request_comment(settings: Settings) 
     dispatched = json.loads(request.payload_json)
     assert dispatched["command"] == "/6bot repair"
     assert dispatched["command_args"] == "--retry"
+    assert dispatched["subject_kind"] == "pull_request"
     assert dispatched["source_repo"] == "6/nitrocop"
     assert dispatched["requested_by"] == "6"
 
@@ -74,22 +73,32 @@ def test_extract_dispatch_request_ignores_non_allowlisted_repo(settings: Setting
         )
 
 
-def test_extract_dispatch_request_ignores_non_pr_issue_comment(settings: Settings) -> None:
+def test_extract_dispatch_request_from_issue_comment(settings: Settings) -> None:
     payload = {
         "action": "created",
         "repository": {"full_name": "6/nitrocop"},
-        "issue": {"number": 1},
-        "comment": {"id": 1, "body": "/6bot repair", "author_association": "OWNER"},
+        "issue": {"number": 7, "html_url": "https://github.com/6/nitrocop/issues/7"},
+        "comment": {
+            "id": 1,
+            "body": "/6bot fix",
+            "html_url": "https://github.com/6/nitrocop/issues/7#issuecomment-1",
+            "author_association": "OWNER",
+        },
         "sender": {"login": "6"},
+        "installation": {"id": 123},
     }
 
-    with pytest.raises(IgnoreWebhook, match="pull request"):
-        extract_dispatch_request(
-            event_name="issue_comment",
-            delivery_id=None,
-            payload=payload,
-            settings=settings,
-        )
+    request = extract_dispatch_request(
+        event_name="issue_comment",
+        delivery_id=None,
+        payload=payload,
+        settings=settings,
+    )
+
+    dispatched = json.loads(request.payload_json)
+    assert dispatched["subject_kind"] == "issue"
+    assert dispatched["issue_number"] == 7
+    assert "pr_number" not in dispatched
 
 
 def test_extract_dispatch_request_requires_installation(settings: Settings) -> None:

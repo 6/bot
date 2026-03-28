@@ -39,11 +39,9 @@ def test_build_installation_token_request_uses_app_jwt() -> None:
         allowed_commands=("/6bot repair",),
         allowed_repositories=("6/nitrocop",),
         bot_control_repo="6/bot",
-        dispatch_workflow="webhook-command.yml",
         github_app_id="12345",
         github_app_private_key=private_key.save_pkcs1().decode("utf-8"),
         webhook_secret="secret",
-        workflow_ref="main",
     )
 
     request = build_installation_token_request(settings, installation_id=987, now=1_700_000_000)

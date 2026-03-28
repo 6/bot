@@ -11,11 +11,9 @@ def test_build_workflow_dispatch_request_uses_expected_contract() -> None:
         allowed_commands=("/6bot",),
         allowed_repositories=("6/nitrocop",),
         bot_control_repo="6/bot",
-        dispatch_workflow="webhook-command.yml",
         github_app_id="12345",
         github_app_private_key="pem",
         webhook_secret="secret",
-        workflow_ref="main",
     )
     request = DispatchRequest(
         installation_id=123,

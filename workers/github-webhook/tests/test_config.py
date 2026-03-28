@@ -7,8 +7,6 @@ def test_load_settings_reads_csv_fields() -> None:
     settings = load_settings(
         {
             "BOT_CONTROL_REPO": "6/bot",
-            "DISPATCH_WORKFLOW": "webhook-command.yml",
-            "WORKFLOW_REF": "main",
             "GH_APP_ID": "12345",
             "GH_APP_PRIVATE_KEY": "pem",
             "ALLOWED_REPOSITORIES": "6/nitrocop,6/another",
