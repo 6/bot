@@ -24,7 +24,9 @@ ALLOWED_OPERATION_TYPES = {
     "edit_pr",
     "ensure_labels",
     "edit_issue_labels",
+    "merge_pr",
     "push_patch",
+    "ready_pr",
 }
 
 
@@ -249,6 +251,8 @@ def _create_branch(
     context["BRANCH"] = branch
     context["UNSIGNED_SHA"] = promotion["unsigned_sha"]
     context["SIGNED_SHA"] = promotion["signed_sha"]
+    if "parent_sha" in promotion:
+        context["PARENT_SHA"] = promotion["parent_sha"]
     return promotion
 
 
@@ -323,6 +327,28 @@ def _edit_pr(request_path: Path, repo: str, operation: dict, context: dict[str, 
     _run(cmd)
 
 
+def _ready_pr(repo: str, pr_target: str) -> None:
+    _run(["gh", "pr", "ready", pr_target, "--repo", repo])
+
+
+def _merge_pr(
+    repo: str,
+    pr_target: str,
+    *,
+    auto: bool = False,
+    squash: bool = False,
+    delete_branch: bool = False,
+) -> None:
+    cmd = ["gh", "pr", "merge", pr_target, "--repo", repo]
+    if auto:
+        cmd.append("--auto")
+    if squash:
+        cmd.append("--squash")
+    if delete_branch:
+        cmd.append("--delete-branch")
+    _run(cmd)
+
+
 def _edit_issue_labels(repo: str, issue_number: int, operation: dict) -> None:
     cmd = ["gh", "issue", "edit", str(issue_number), "--repo", repo]
     add_labels = operation.get("add_labels", [])
@@ -360,6 +386,8 @@ def _push_patch(
     promotion = _promote(repo, branch, promote_message)
     context["UNSIGNED_SHA"] = promotion["unsigned_sha"]
     context["SIGNED_SHA"] = promotion["signed_sha"]
+    if "parent_sha" in promotion:
+        context["PARENT_SHA"] = promotion["parent_sha"]
     return {"pushed": "true", **promotion}
 
 
@@ -394,6 +422,20 @@ def execute_request(
         elif op_type == "edit_pr":
             _edit_pr(request_path, repo, operation, context)
             result = {"edited": "true"}
+        elif op_type == "ready_pr":
+            pr_target = _render_template(str(operation["pr"]), context)
+            _ready_pr(repo, pr_target)
+            result = {"readied": "true"}
+        elif op_type == "merge_pr":
+            pr_target = _render_template(str(operation["pr"]), context)
+            _merge_pr(
+                repo,
+                pr_target,
+                auto=bool(operation.get("auto", False)),
+                squash=bool(operation.get("squash", False)),
+                delete_branch=bool(operation.get("delete_branch", False)),
+            )
+            result = {"merged": "true"}
         elif op_type == "comment_pr":
             body = _body_from_file(request_path, operation["body_file"], context)
             _comment_pr(repo, int(operation["pr_number"]), body)

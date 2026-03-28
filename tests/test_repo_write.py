@@ -72,6 +72,8 @@ def test_load_request_accepts_claim_flow_operations(tmp_path: Path) -> None:
                         "body_file": "body.md",
                     },
                     {"type": "edit_pr", "pr": "{{PR_URL}}", "body_file": "body.md"},
+                    {"type": "ready_pr", "pr": "{{PR_URL}}"},
+                    {"type": "merge_pr", "pr": "{{PR_URL}}", "auto": True, "squash": True, "delete_branch": True},
                 ]
             }
         )
@@ -83,6 +85,8 @@ def test_load_request_accepts_claim_flow_operations(tmp_path: Path) -> None:
         "create_branch",
         "create_pr",
         "edit_pr",
+        "ready_pr",
+        "merge_pr",
     ]
 
 
@@ -292,4 +296,52 @@ def test_edit_pr_renders_pr_url_from_context(monkeypatch, tmp_path: Path) -> Non
         "https://github.com/6/nitrocop/pull/123",
         "--repo",
         "6/nitrocop",
+    ]
+
+
+def test_ready_pr_uses_repo(monkeypatch) -> None:
+    calls: list[list[str]] = []
+
+    def fake_run(cmd: list[str], *, cwd=None, check: bool = True):  # noqa: ANN001
+        calls.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    monkeypatch.setattr(repo_write, "_run", fake_run)
+
+    repo_write._ready_pr("6/nitrocop", "https://github.com/6/nitrocop/pull/123")  # noqa: SLF001
+
+    assert calls == [
+        ["gh", "pr", "ready", "https://github.com/6/nitrocop/pull/123", "--repo", "6/nitrocop"]
+    ]
+
+
+def test_merge_pr_supports_auto_squash_delete(monkeypatch) -> None:
+    calls: list[list[str]] = []
+
+    def fake_run(cmd: list[str], *, cwd=None, check: bool = True):  # noqa: ANN001
+        calls.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    monkeypatch.setattr(repo_write, "_run", fake_run)
+
+    repo_write._merge_pr(  # noqa: SLF001
+        "6/nitrocop",
+        "https://github.com/6/nitrocop/pull/123",
+        auto=True,
+        squash=True,
+        delete_branch=True,
+    )
+
+    assert calls == [
+        [
+            "gh",
+            "pr",
+            "merge",
+            "https://github.com/6/nitrocop/pull/123",
+            "--repo",
+            "6/nitrocop",
+            "--auto",
+            "--squash",
+            "--delete-branch",
+        ]
     ]
