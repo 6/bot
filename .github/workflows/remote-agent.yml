@@ -1,0 +1,185 @@
+name: Remote Agent Runner
+run-name: remote-agent ${{ github.event.client_payload.request_id }}
+
+permissions:
+  contents: read
+  actions: read
+
+on:
+  repository_dispatch:
+    types: [run_agent]
+
+jobs:
+  run:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          path: .bot
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Resolve request
+        id: request
+        shell: bash
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          import os
+
+          with open(os.environ["GITHUB_EVENT_PATH"]) as f:
+              event = json.load(f)
+
+          payload = event["client_payload"]
+          source_repo = payload["source_repo"]
+          source_owner, source_name = source_repo.split("/", 1)
+
+          outputs = {
+              "request_id": payload["request_id"],
+              "source_repo": source_repo,
+              "source_owner": source_owner,
+              "source_name": source_name,
+              "source_run_id": str(payload["source_run_id"]),
+              "input_artifact": payload["input_artifact"],
+              "output_artifact": payload["output_artifact"],
+              "target_sha": payload["target_sha"],
+              "target_ref": payload["target_ref"],
+              "backend": payload["backend"],
+              "base_sha": payload["base_sha"],
+              "workflow": payload["workflow"],
+              "diff_paths": payload.get("diff_paths", ""),
+              "setup_profile": payload.get("setup_profile", ""),
+              "setup_config_json": json.dumps(payload.get("setup_config_json", {})),
+          }
+          for key, value in outputs.items():
+              print(f"{key}={value}")
+          PY
+
+      - name: Validate source repo and target ref
+        shell: bash
+        run: |
+          uv run --project .bot python -m bot.allowlist check-repo "${{ steps.request.outputs.source_repo }}"
+
+          if [ "${{ steps.request.outputs.source_owner }}" != "6" ]; then
+            echo "::error::6/bot only accepts dispatches for repositories owned by 6"
+            exit 1
+          fi
+
+          case "${{ steps.request.outputs.target_ref }}" in
+            refs/heads/*|refs/tags/*) ;;
+            *)
+              echo "::error::target_ref must be a refs/heads/* or refs/tags/* ref"
+              exit 1
+              ;;
+          esac
+
+          case "${{ steps.request.outputs.target_ref }}" in
+            refs/pull/*)
+              echo "::error::pull-request refs are not allowed"
+              exit 1
+              ;;
+          esac
+
+      - name: Generate read-only GitHub token
+        id: read-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: ${{ steps.request.outputs.source_owner }}
+          repositories: ${{ steps.request.outputs.source_name }}
+          permission-actions: read
+          permission-contents: read
+          permission-metadata: read
+          permission-pull-requests: read
+
+      - name: Download source input artifact
+        env:
+          GH_TOKEN: ${{ steps.read-token.outputs.token }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/remote-input"
+          gh run download "${{ steps.request.outputs.source_run_id }}" \
+            -R "${{ steps.request.outputs.source_repo }}" \
+            -n "${{ steps.request.outputs.input_artifact }}" \
+            -D "$RUNNER_TEMP/remote-input"
+
+      - uses: actions/checkout@v6
+        with:
+          repository: ${{ steps.request.outputs.source_repo }}
+          ref: ${{ steps.request.outputs.target_sha }}
+          token: ${{ steps.read-token.outputs.token }}
+          submodules: true
+          fetch-depth: 0
+          clean: false
+          persist-credentials: false
+
+      - name: Validate target SHA is contained in target ref
+        shell: bash
+        run: |
+          git fetch --no-tags origin "${{ steps.request.outputs.target_ref }}"
+          if ! git merge-base --is-ancestor "${{ steps.request.outputs.target_sha }}" FETCH_HEAD; then
+            echo "::error::target_sha is not contained in ${{ steps.request.outputs.target_ref }}"
+            exit 1
+          fi
+
+      - name: Detect target repo bot setup action
+        id: setup
+        shell: bash
+        run: |
+          if [ -f ".github/actions/bot-setup/action.yml" ]; then
+            echo "has_bot_setup=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_bot_setup=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: ./.github/actions/bot-setup
+        if: steps.setup.outputs.has_bot_setup == 'true'
+        with:
+          setup_profile: ${{ steps.request.outputs.setup_profile }}
+          setup_config_json: ${{ steps.request.outputs.setup_config_json }}
+
+      - name: Initialize runtime layout
+        run: |
+          uv run --project .bot python -m bot.agent_runtime "${{ steps.request.outputs.workflow }}" \
+            --runner-temp "${RUNNER_TEMP}" >> "$GITHUB_ENV"
+
+      - name: Populate prompt files
+        shell: bash
+        run: |
+          INPUT_DIR="$RUNNER_TEMP/remote-input"
+          cp "$INPUT_DIR/final-task.md" "$FINAL_TASK_FILE"
+          if [ -f "$INPUT_DIR/task.md" ]; then
+            cp "$INPUT_DIR/task.md" "$TASK_FILE"
+          else
+            cp "$FINAL_TASK_FILE" "$TASK_FILE"
+          fi
+
+      - name: Run remote agent
+        id: agent
+        uses: ./.bot/.github/actions/run-agent
+        with:
+          backend: ${{ steps.request.outputs.backend }}
+          actions_read_token: ${{ steps.read-token.outputs.token }}
+          anthropic_auth_token: ${{ secrets.MINIMAX_API_KEY }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          codex_auth_json: ${{ secrets.CODEX_AUTH_JSON }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          base_sha: ${{ steps.request.outputs.base_sha }}
+          workflow: ${{ steps.request.outputs.workflow }}
+          diff_paths: ${{ steps.request.outputs.diff_paths }}
+
+      - name: Upload remote output
+        if: always() && steps.agent.outputs.leak_scan_ok == 'true'
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ steps.request.outputs.output_artifact }}
+          path: ${{ steps.agent.outputs.artifact_paths }}
+          retention-days: 7
+
+      - name: Fail on leak scan
+        if: always() && steps.agent.outputs.leak_scan_ok != 'true'
+        run: |
+          echo "::error::Remote agent leak scan failed; output artifact was not uploaded"
+          exit 1
