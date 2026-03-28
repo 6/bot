@@ -57,7 +57,7 @@ Trusted ref modes:
 - `config/` — editable control-plane configuration such as the source-repo allowlist
 - `src/bot/` — Python helpers for backend resolution, runtime setup, leak scanning, and secret validation
 - `tests/` — unit coverage for the control-plane helpers
-- `worker/github-webhook/` — Cloudflare Worker ingress for GitHub App webhooks
+- `workers/github-webhook/` — Cloudflare Worker ingress for GitHub App webhooks
 
 ## Required Repo Configuration
 

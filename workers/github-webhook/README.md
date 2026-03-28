@@ -34,7 +34,7 @@ From the repo root:
 
 ```bash
 mise install
-cd worker/github-webhook
+cd workers/github-webhook
 uv sync --group dev
 ```
 

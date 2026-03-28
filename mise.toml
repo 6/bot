@@ -4,17 +4,17 @@ python = "3.13"
 uv = "latest"
 
 [tasks.worker-webhook-sync]
-dir = "worker/github-webhook"
+dir = "workers/github-webhook"
 run = "uv sync --group dev"
 
 [tasks.worker-webhook-check]
-dir = "worker/github-webhook"
+dir = "workers/github-webhook"
 run = "uv run ruff check src tests && uv run pytest -q"
 
 [tasks.worker-webhook-dev]
-dir = "worker/github-webhook"
+dir = "workers/github-webhook"
 run = "uv run pywrangler dev"
 
 [tasks.worker-webhook-deploy]
-dir = "worker/github-webhook"
+dir = "workers/github-webhook"
 run = "test -n \"$CLOUDFLARE_WORKER_NAME\" && test -n \"$GH_APP_ID\" && uv run pywrangler deploy --name \"$CLOUDFLARE_WORKER_NAME\" --var \"GH_APP_ID:$GH_APP_ID\""

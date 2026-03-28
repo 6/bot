@@ -45,9 +45,9 @@ jobs:
           fi
 
       - name: Sync worker dependencies
-        working-directory: worker/github-webhook
+        working-directory: workers/github-webhook
         run: uv sync --frozen --group dev
 
       - name: Deploy webhook worker
-        working-directory: worker/github-webhook
+        working-directory: workers/github-webhook
         run: uv run pywrangler deploy --name "$CLOUDFLARE_WORKER_NAME" --var "GH_APP_ID:$GH_APP_ID"

@@ -39,13 +39,13 @@ jobs:
       - uses: astral-sh/setup-uv@v6
 
       - name: Sync worker dependencies
-        working-directory: worker/github-webhook
+        working-directory: workers/github-webhook
         run: uv sync --frozen --group dev
 
       - name: Worker Ruff
-        working-directory: worker/github-webhook
+        working-directory: workers/github-webhook
         run: uv run ruff check src tests
 
       - name: Worker Pytest
-        working-directory: worker/github-webhook
+        working-directory: workers/github-webhook
         run: uv run pytest -q
