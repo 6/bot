@@ -18,6 +18,7 @@ MAX_OPERATIONS = 100
 ALLOWED_OPERATION_TYPES = {
     "comment_pr",
     "comment_issue",
+    "close_pr",
     "edit_issue_labels",
     "push_patch",
 }
@@ -203,6 +204,15 @@ def _comment_issue(repo: str, issue_number: int, body: str) -> None:
         Path(temp_path).unlink(missing_ok=True)
 
 
+def _close_pr(repo: str, pr_target: str, *, comment: str = "", delete_branch: bool = False) -> None:
+    cmd = ["gh", "pr", "close", pr_target, "--repo", repo]
+    if comment:
+        cmd.extend(["--comment", comment])
+    if delete_branch:
+        cmd.append("--delete-branch")
+    _run(cmd)
+
+
 def _edit_issue_labels(repo: str, issue_number: int, operation: dict) -> None:
     cmd = ["gh", "issue", "edit", str(issue_number), "--repo", repo]
     add_labels = operation.get("add_labels", [])
@@ -272,6 +282,22 @@ def execute_request(
             body = _body_from_file(request_path, operation["body_file"], context)
             _comment_issue(repo, int(operation["issue_number"]), body)
             result = {"posted": "true"}
+        elif op_type == "close_pr":
+            comment = ""
+            if "comment_file" in operation:
+                comment = _body_from_file(request_path, operation["comment_file"], context)
+            elif "comment" in operation:
+                comment = _render_template(str(operation["comment"]), context)
+            pr_target = str(operation.get("pr") or operation.get("pr_url") or operation.get("pr_number") or "")
+            if not pr_target:
+                raise ValueError("close_pr requires pr, pr_url, or pr_number")
+            _close_pr(
+                repo,
+                pr_target,
+                comment=comment,
+                delete_branch=bool(operation.get("delete_branch", False)),
+            )
+            result = {"closed": "true"}
         elif op_type == "edit_issue_labels":
             _edit_issue_labels(repo, int(operation["issue_number"]), operation)
             result = {"edited": "true"}

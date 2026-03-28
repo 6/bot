@@ -48,6 +48,14 @@ def test_load_request_rejects_too_many_operations(tmp_path: Path) -> None:
         raise AssertionError("expected ValueError for too many operations")
 
 
+def test_load_request_accepts_close_pr_operation(tmp_path: Path) -> None:
+    request_path = tmp_path / "request.json"
+    request_path.write_text(json.dumps({"operations": [{"type": "close_pr", "pr": "123"}]}))
+
+    loaded = repo_write._load_request(request_path)  # noqa: SLF001
+    assert loaded["operations"][0]["type"] == "close_pr"
+
+
 def test_has_worktree_changes_detects_untracked_files(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -116,3 +124,34 @@ def test_resolve_request_file_rejects_symlink_escape(tmp_path: Path) -> None:
         assert "escapes" in str(exc) or "traversal" in str(exc)
     else:
         raise AssertionError("expected ValueError for symlink escape")
+
+
+def test_close_pr_uses_repo_comment_and_delete_branch(monkeypatch) -> None:
+    calls: list[list[str]] = []
+
+    def fake_run(cmd: list[str], *, cwd=None, check: bool = True):  # noqa: ANN001
+        calls.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    monkeypatch.setattr(repo_write, "_run", fake_run)
+
+    repo_write._close_pr(  # noqa: SLF001
+        "6/nitrocop",
+        "https://github.com/6/nitrocop/pull/123",
+        comment="Agent produced no changes.",
+        delete_branch=True,
+    )
+
+    assert calls == [
+        [
+            "gh",
+            "pr",
+            "close",
+            "https://github.com/6/nitrocop/pull/123",
+            "--repo",
+            "6/nitrocop",
+            "--comment",
+            "Agent produced no changes.",
+            "--delete-branch",
+        ]
+    ]
