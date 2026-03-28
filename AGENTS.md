@@ -36,8 +36,8 @@ This repo is public by design, but it is meant to be tightly controlled:
 - `main` is the only branch intended for normal operation
 - all model secrets stay in this repo, never in target repos
 - the Cloudflare Worker validates webhook signatures and routes commands into `6/bot`
-- the Worker currently uses a dedicated `REMOTE_BOT_WORKFLOW_TOKEN` scoped to `6/bot` with `Actions: write` only
-- target/source repos should not need a dispatch token once they are fully migrated to the webhook model
+- the Worker holds GitHub App credentials and mints installation tokens per request
+- target/source repos should not need a dispatch token in the webhook model
 - only explicitly allowlisted source repos may dispatch work here
 - only branch/tag refs are accepted; `refs/pull/*` is rejected
 - the requested `target_sha` must still match the trusted ref contract for the requested operation
@@ -45,7 +45,6 @@ This repo is public by design, but it is meant to be tightly controlled:
 Important:
 - allowlisting a repo means you trust its checked-out code to run under this control plane
 - target repos must gate dispatch on their own side too; `6/bot` is a second line of defense, not the first
-- the `REMOTE_BOT_WORKFLOW_TOKEN` should be scoped only to `6/bot` with `Actions: write`; do not grant `Contents: write`
 
 Trusted ref modes:
 - remote agent execution may target a trusted branch/tag ref and run at the requested SHA

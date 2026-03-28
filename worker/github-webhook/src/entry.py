@@ -9,6 +9,7 @@ from workers import WorkerEntrypoint
 
 from github_webhook.config import load_settings
 from github_webhook.dispatch import build_workflow_dispatch_request
+from github_webhook.github_app import build_installation_token_request
 from github_webhook.github_signature import verify_signature
 from github_webhook.intake import IgnoreWebhook, extract_dispatch_request
 
@@ -75,7 +76,40 @@ class Default(WorkerEntrypoint):
         except ValueError as exc:
             return _json_response(400, {"error": "invalid_payload", "message": str(exc)})
 
-        dispatch = build_workflow_dispatch_request(settings, dispatch_request)
+        token_request = build_installation_token_request(
+            settings,
+            installation_id=dispatch_request.installation_id,
+        )
+        token_response = await js_fetch(
+            token_request.url,
+            _to_js(
+                {
+                    "method": "POST",
+                    "headers": token_request.headers,
+                    "body": token_request.body,
+                }
+            ),
+        )
+        token_body = await token_response.text()
+        if not (200 <= int(token_response.status) < 300):
+            return _json_response(
+                502,
+                {
+                    "error": "installation_token_failed",
+                    "status": int(token_response.status),
+                    "body": str(token_body)[:500],
+                },
+            )
+        try:
+            installation_token = json.loads(str(token_body))["token"]
+        except (json.JSONDecodeError, KeyError):
+            return _json_response(502, {"error": "installation_token_invalid_response"})
+
+        dispatch = build_workflow_dispatch_request(
+            settings,
+            dispatch_request,
+            access_token=installation_token,
+        )
         response = await js_fetch(
             dispatch.url,
             _to_js(

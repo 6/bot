@@ -14,8 +14,9 @@ def settings() -> Settings:
         allowed_repositories=("6/nitrocop",),
         bot_control_repo="6/bot",
         dispatch_workflow="webhook-command.yml",
+        github_app_id="12345",
+        github_app_private_key="pem",
         github_api_base="https://api.github.com",
-        remote_bot_workflow_token="token",
         webhook_secret="secret",
         workflow_ref="main",
     )
@@ -48,6 +49,7 @@ def test_extract_dispatch_request_from_pull_request_comment(settings: Settings) 
     )
 
     assert request.request_id == "webhook-abc123"
+    assert request.installation_id == 123
     dispatched = json.loads(request.payload_json)
     assert dispatched["command"] == "/6bot repair"
     assert dispatched["command_args"] == "--retry"
@@ -83,6 +85,24 @@ def test_extract_dispatch_request_ignores_non_pr_issue_comment(settings: Setting
     }
 
     with pytest.raises(IgnoreWebhook, match="pull request"):
+        extract_dispatch_request(
+            event_name="issue_comment",
+            delivery_id=None,
+            payload=payload,
+            settings=settings,
+        )
+
+
+def test_extract_dispatch_request_requires_installation(settings: Settings) -> None:
+    payload = {
+        "action": "created",
+        "repository": {"full_name": "6/nitrocop"},
+        "issue": {"number": 1, "pull_request": {"url": "x"}},
+        "comment": {"id": 1, "body": "/6bot repair", "author_association": "OWNER"},
+        "sender": {"login": "6"},
+    }
+
+    with pytest.raises(ValueError, match="installation.id"):
         extract_dispatch_request(
             event_name="issue_comment",
             delivery_id=None,

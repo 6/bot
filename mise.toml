@@ -17,4 +17,4 @@ run = "uv run pywrangler dev"
 
 [tasks.worker-webhook-deploy]
 dir = "worker/github-webhook"
-run = "test -n \"$CLOUDFLARE_WORKER_NAME\" && uv run pywrangler deploy --name \"$CLOUDFLARE_WORKER_NAME\""
+run = "test -n \"$CLOUDFLARE_WORKER_NAME\" && test -n \"$GH_APP_ID\" && uv run pywrangler deploy --name \"$CLOUDFLARE_WORKER_NAME\" --var \"GH_APP_ID:$GH_APP_ID\""

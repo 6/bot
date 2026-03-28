@@ -15,7 +15,7 @@ class WorkflowDispatchRequest:
 
 
 def build_workflow_dispatch_request(
-    settings: Settings, request: DispatchRequest
+    settings: Settings, request: DispatchRequest, *, access_token: str
 ) -> WorkflowDispatchRequest:
     body = json.dumps(
         {
@@ -31,7 +31,7 @@ def build_workflow_dispatch_request(
     )
     headers = {
         "Accept": "application/vnd.github+json",
-        "Authorization": f"Bearer {settings.remote_bot_workflow_token}",
+        "Authorization": f"Bearer {access_token}",
         "Content-Type": "application/json",
         "User-Agent": "6-bot-github-webhook",
         "X-GitHub-Api-Version": "2022-11-28",

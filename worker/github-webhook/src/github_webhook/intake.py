@@ -14,6 +14,7 @@ class IgnoreWebhook(ValueError):
 
 @dataclass(frozen=True)
 class DispatchRequest:
+    installation_id: int
     request_id: str
     source_repo: str
     payload_json: str
@@ -76,6 +77,8 @@ def extract_dispatch_request(
 
     installation = payload.get("installation") or {}
     installation_id = installation.get("id")
+    if not isinstance(installation_id, int):
+        raise ValueError("installation.id is required")
 
     request_id = (
         f"webhook-{delivery_id}"
@@ -103,6 +106,7 @@ def extract_dispatch_request(
     }
 
     return DispatchRequest(
+        installation_id=installation_id,
         request_id=request_id,
         source_repo=source_repo,
         payload_json=json.dumps(request_payload, separators=(",", ":"), sort_keys=True),

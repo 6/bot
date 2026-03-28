@@ -43,8 +43,9 @@ For local development, put worker-only secrets in a gitignored `.dev.vars` file 
 Example:
 
 ```dotenv
+GH_APP_ID=replace-me
 GITHUB_WEBHOOK_SECRET=replace-me
-REMOTE_BOT_WORKFLOW_TOKEN=replace-me
+GH_APP_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----"
 ```
 
 Useful commands:
@@ -70,22 +71,24 @@ mise run worker-webhook-deploy
 ## Required Cloudflare Secrets
 
 Set these in the Worker environment:
+- `GH_APP_ID`
+- `GH_APP_PRIVATE_KEY`
 - `GITHUB_WEBHOOK_SECRET`
-- `REMOTE_BOT_WORKFLOW_TOKEN`
 
 Notes:
+- `GH_APP_ID` is the GitHub App identifier used to mint installation tokens.
+- `GH_APP_PRIVATE_KEY` is the GitHub App private key used by the Worker to mint installation tokens.
 - `GITHUB_WEBHOOK_SECRET` must match the webhook secret configured on the GitHub App.
-- `REMOTE_BOT_WORKFLOW_TOKEN` is the current bridge credential used by the Worker to trigger `workflow_dispatch` on `6/bot`.
-- This token lives only in the Worker environment. Source repos should not need their own dispatch token in the webhook model.
-- Long term, this token can be replaced by GitHub App installation-token minting inside the Worker if you want to remove it entirely.
+- The Worker mints a GitHub App installation token per request and uses that token to trigger `workflow_dispatch` on `6/bot`.
 
 For deployed environments, store these as Cloudflare Worker secrets, not in `wrangler.toml`.
 
 Examples:
 
 ```bash
-npx wrangler secret put GITHUB_WEBHOOK_SECRET
-npx wrangler secret put REMOTE_BOT_WORKFLOW_TOKEN
+export CLOUDFLARE_WORKER_NAME=replace-me
+npx wrangler secret put GH_APP_PRIVATE_KEY --name "$CLOUDFLARE_WORKER_NAME"
+npx wrangler secret put GITHUB_WEBHOOK_SECRET --name "$CLOUDFLARE_WORKER_NAME"
 ```
 
 ## Non-Secret Configuration
@@ -124,12 +127,16 @@ The checked-in Worker name is only a placeholder. Deploy the real public Worker 
 
 ```bash
 export CLOUDFLARE_WORKER_NAME=replace-me
-uv run pywrangler deploy --name "$CLOUDFLARE_WORKER_NAME"
+export GH_APP_ID=replace-me
+uv run pywrangler deploy --name "$CLOUDFLARE_WORKER_NAME" --var "GH_APP_ID:$GH_APP_ID"
 ```
 
 Recommended GitHub Actions secret:
 - `CLOUDFLARE_WORKER_NAME`
 - optional: `CLOUDFLARE_WORKERS_SUBDOMAIN` for masking the derived `workers.dev` URL in deploy logs
+
+Recommended GitHub Actions variable:
+- `GH_APP_ID`
 
 This project is configured with:
 - `workers_dev = true`

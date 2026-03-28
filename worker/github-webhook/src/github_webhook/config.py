@@ -26,8 +26,9 @@ class Settings:
     allowed_repositories: tuple[str, ...]
     bot_control_repo: str
     dispatch_workflow: str
+    github_app_id: str
+    github_app_private_key: str
     github_api_base: str
-    remote_bot_workflow_token: str
     webhook_secret: str
     workflow_ref: str
 
@@ -38,11 +39,12 @@ def load_settings(env: object) -> Settings:
         "DISPATCH_WORKFLOW": _read_env(env, "DISPATCH_WORKFLOW"),
         "WORKFLOW_REF": _read_env(env, "WORKFLOW_REF"),
         "GITHUB_API_BASE": _read_env(env, "GITHUB_API_BASE"),
+        "GH_APP_ID": _read_env(env, "GH_APP_ID"),
+        "GH_APP_PRIVATE_KEY": _read_env(env, "GH_APP_PRIVATE_KEY"),
         "ALLOWED_REPOSITORIES": _read_env(env, "ALLOWED_REPOSITORIES"),
         "ALLOWED_ASSOCIATIONS": _read_env(env, "ALLOWED_ASSOCIATIONS"),
         "ALLOWED_COMMANDS": _read_env(env, "ALLOWED_COMMANDS"),
         "GITHUB_WEBHOOK_SECRET": _read_env(env, "GITHUB_WEBHOOK_SECRET"),
-        "REMOTE_BOT_WORKFLOW_TOKEN": _read_env(env, "REMOTE_BOT_WORKFLOW_TOKEN"),
     }
     missing = sorted(name for name, value in required.items() if value is None)
     if missing:
@@ -56,8 +58,9 @@ def load_settings(env: object) -> Settings:
         allowed_repositories=_split_csv(required["ALLOWED_REPOSITORIES"] or ""),
         bot_control_repo=required["BOT_CONTROL_REPO"] or "",
         dispatch_workflow=required["DISPATCH_WORKFLOW"] or "",
+        github_app_id=required["GH_APP_ID"] or "",
+        github_app_private_key=required["GH_APP_PRIVATE_KEY"] or "",
         github_api_base=required["GITHUB_API_BASE"] or "",
-        remote_bot_workflow_token=required["REMOTE_BOT_WORKFLOW_TOKEN"] or "",
         webhook_secret=required["GITHUB_WEBHOOK_SECRET"] or "",
         workflow_ref=required["WORKFLOW_REF"] or "",
     )
