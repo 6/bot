@@ -1,0 +1,13 @@
+name = "bot-github-webhook"
+main = "src/entry.py"
+compatibility_date = "2026-03-28"
+compatibility_flags = ["python_workers"]
+
+[vars]
+BOT_CONTROL_REPO = "6/bot"
+DISPATCH_WORKFLOW = "webhook-command.yml"
+WORKFLOW_REF = "main"
+GITHUB_API_BASE = "https://api.github.com"
+ALLOWED_REPOSITORIES = "6/nitrocop"
+ALLOWED_ASSOCIATIONS = "OWNER,MEMBER,COLLABORATOR"
+ALLOWED_COMMANDS = "/6bot repair,/6bot fix"

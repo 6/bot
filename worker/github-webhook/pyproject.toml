@@ -1,0 +1,28 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+# Internal helper package for this repo; not intended for publication.
+name = "github-webhook-worker"
+version = "0.1.0"
+description = "Thin Cloudflare Worker front door for the 6/bot control plane"
+requires-python = ">=3.13"
+dependencies = []
+
+[dependency-groups]
+dev = [
+  "pytest>=8.4.2",
+  "ruff>=0.12.12",
+  "workers-py",
+  "workers-runtime-sdk",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/github_webhook"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py313"

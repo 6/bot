@@ -1,0 +1,137 @@
+name: Webhook Command
+run-name: webhook-command ${{ inputs.request_id }}
+
+permissions:
+  contents: read
+  actions: read
+
+on:
+  workflow_dispatch:
+    inputs:
+      request_id:
+        description: Unique request identifier for tracking
+        required: true
+        type: string
+      source_repo:
+        description: Source repository (owner/name) — used for concurrency grouping
+        required: true
+        type: string
+      payload:
+        description: Full JSON webhook payload distilled by the Cloudflare worker
+        required: true
+        type: string
+
+concurrency:
+  group: webhook-command-${{ inputs.source_repo }}
+  cancel-in-progress: false
+
+jobs:
+  record:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          path: .bot
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Resolve request
+        id: request
+        shell: bash
+        env:
+          INPUT_PAYLOAD: ${{ inputs.payload }}
+          INPUT_SOURCE_REPO: ${{ inputs.source_repo }}
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          import os
+          import sys
+
+          payload = json.loads(os.environ["INPUT_PAYLOAD"])
+          source_repo = payload["source_repo"]
+
+          if source_repo != os.environ["INPUT_SOURCE_REPO"]:
+              print("::error::payload source_repo does not match workflow input", file=sys.stderr)
+              sys.exit(1)
+
+          source_owner, source_name = source_repo.split("/", 1)
+
+          outputs = {
+              "request_id": payload["request_id"],
+              "source_repo": source_repo,
+              "source_owner": source_owner,
+              "source_name": source_name,
+              "event_name": payload["event_name"],
+              "event_action": payload["event_action"],
+              "command": payload["command"],
+              "requested_by": payload["requested_by"],
+              "requested_by_association": payload["requested_by_association"],
+              "issue_number": str(payload["issue_number"]),
+              "comment_id": str(payload["comment_id"]),
+              "delivery_id": payload.get("delivery_id", ""),
+              "comment_url": payload.get("comment_url", ""),
+          }
+          for key, value in outputs.items():
+              safe = str(value).replace("\n", "").replace("\r", "")
+              print(f"{key}={safe}")
+          PY
+
+      - name: Validate source repo
+        env:
+          SOURCE_REPO: ${{ steps.request.outputs.source_repo }}
+          SOURCE_OWNER: ${{ steps.request.outputs.source_owner }}
+        run: |
+          uv run --project .bot python -m bot.allowlist check-repo "$SOURCE_REPO"
+
+          if [ "$SOURCE_OWNER" != "6" ]; then
+            echo "::error::6/bot only accepts webhook commands for repositories owned by 6"
+            exit 1
+          fi
+
+      - name: Persist webhook payload
+        env:
+          INPUT_PAYLOAD: ${{ inputs.payload }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/webhook-command"
+          printf '%s' "$INPUT_PAYLOAD" > "$RUNNER_TEMP/webhook-command/request.json"
+
+      - name: Summarize webhook request
+        env:
+          REQUEST_ID: ${{ steps.request.outputs.request_id }}
+          SOURCE_REPO: ${{ steps.request.outputs.source_repo }}
+          EVENT_NAME: ${{ steps.request.outputs.event_name }}
+          EVENT_ACTION: ${{ steps.request.outputs.event_action }}
+          COMMAND: ${{ steps.request.outputs.command }}
+          REQUESTED_BY: ${{ steps.request.outputs.requested_by }}
+          REQUESTED_BY_ASSOCIATION: ${{ steps.request.outputs.requested_by_association }}
+          ISSUE_NUMBER: ${{ steps.request.outputs.issue_number }}
+          COMMENT_ID: ${{ steps.request.outputs.comment_id }}
+          DELIVERY_ID: ${{ steps.request.outputs.delivery_id }}
+          COMMENT_URL: ${{ steps.request.outputs.comment_url }}
+        run: |
+          {
+            echo "## Webhook command"
+            echo
+            echo "- Request ID: $REQUEST_ID"
+            echo "- Source repo: $SOURCE_REPO"
+            echo "- Event: $EVENT_NAME / $EVENT_ACTION"
+            echo "- Command: $COMMAND"
+            echo "- Requested by: $REQUESTED_BY ($REQUESTED_BY_ASSOCIATION)"
+            echo "- Issue/PR number: $ISSUE_NUMBER"
+            echo "- Comment ID: $COMMENT_ID"
+            if [ -n "$DELIVERY_ID" ]; then
+              echo "- Delivery ID: $DELIVERY_ID"
+            fi
+            if [ -n "$COMMENT_URL" ]; then
+              echo "- Comment URL: $COMMENT_URL"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload webhook payload
+        uses: actions/upload-artifact@v6
+        with:
+          name: webhook-command-${{ steps.request.outputs.request_id }}
+          path: $RUNNER_TEMP/webhook-command/request.json
+          retention-days: 7

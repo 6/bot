@@ -26,3 +26,26 @@ jobs:
 
       - name: Pytest
         run: uv run pytest -q
+
+  webhook:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Sync worker dependencies
+        working-directory: worker/github-webhook
+        run: uv sync --frozen --group dev
+
+      - name: Worker Ruff
+        working-directory: worker/github-webhook
+        run: uv run ruff check src tests
+
+      - name: Worker Pytest
+        working-directory: worker/github-webhook
+        run: uv run pytest -q

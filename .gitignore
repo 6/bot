@@ -22,11 +22,17 @@ env/
 .coverage
 .coverage.*
 htmlcov/
+.wrangler/
+node_modules/
 
 # Build artifacts
 build/
 dist/
 *.egg-info/
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
 
 # Editors / OS
 .DS_Store
