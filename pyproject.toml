@@ -3,7 +3,8 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "6bot"
+# Internal helper package for this repo; not intended for publication.
+name = "bot"
 version = "0.1.0"
 description = "Shared privileged runner helpers for the 6/bot control plane"
 requires-python = ">=3.12"
