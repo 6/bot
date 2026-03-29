@@ -20,6 +20,7 @@ class DispatchRequest:
     request_id: str
     source_repo: str
     payload_json: str
+    reaction_url: str | None = None
 
 
 def _require_mapping(value: Any, *, field: str) -> dict[str, Any]:
@@ -142,6 +143,7 @@ def _extract_comment_request(
         request_id=request_id,
         source_repo=source_repo,
         payload_json=json.dumps(request_payload, separators=(",", ":"), sort_keys=True),
+        reaction_url=f"/repos/{source_repo}/issues/comments/{comment_id}/reactions",
     )
 
 
@@ -210,6 +212,7 @@ def _extract_issue_assignment_request(
         request_id=request_id,
         source_repo=source_repo,
         payload_json=json.dumps(request_payload, separators=(",", ":"), sort_keys=True),
+        reaction_url=f"/repos/{source_repo}/issues/{issue_number}/reactions",
     )
 
 

@@ -24,7 +24,7 @@ This repo does **not** own target-repo policy. Each target repo decides:
 - `6/bot` is a **generic control plane**, not a repo-specific workflow library.
 - The Cloudflare Worker is the standard external ingress for webhook-driven bot requests.
 - Inside `6/bot`, GitHub Actions still use `workflow_dispatch` as the internal handoff from the Worker into the executor workflows.
-- The webhook landing workflow routes both issue-driven and PR-comment-driven tasks into the internal `repo-task.yml` orchestrator.
+- The Worker dispatches directly into the `repo-task.yml` orchestrator and posts an immediate 👀 reaction on the triggering comment/issue for sub-second feedback.
 - `6/bot` checks that the source repo is explicitly allowlisted, then checks out the target repo at the requested SHA and either runs the selected backend or performs a generic write request with credentials that live only here.
 - Target repos may expose an optional `.github/actions/bot-setup/action.yml` hook for language/toolchain setup. That hook runs inside the target repo checkout, so only allow trusted repos and trusted refs.
 - The remote agent writes runtime artifacts and a patch. The calling repo downloads those artifacts and applies the patch locally.
@@ -131,9 +131,11 @@ Runs:
 
 It validates presence/shape of the repo credentials and should be the place to grow future provider-specific health probes.
 
-### `webhook-command.yml`
+### `webhook-command.yml` (legacy, not in hot path)
 
 Triggered by `workflow_dispatch` with inputs `request_id`, `source_repo`, and `payload` (JSON).
+
+**Note:** The Cloudflare Worker now dispatches directly to `repo-task.yml`, bypassing this workflow. It remains available for manual debugging or direct dispatch but is no longer in the webhook hot path.
 
 High-level flow:
 1. Parse the JSON payload from the `payload` input.
@@ -142,8 +144,6 @@ High-level flow:
 4. Record the distilled webhook request in the job summary.
 5. Dispatch the internal `repo-task.yml` workflow with the original payload.
 6. Upload the JSON payload as an artifact for follow-on routing/debugging.
-
-This is the first landing point for the webhook ingress. It should stay generic and hand off repo-specific routing to the source repo's `repo_task.py`.
 
 ### `repo-task.yml`
 
@@ -291,11 +291,16 @@ When integrating a new repo:
 ## Local Commands
 
 ```bash
+# Root project (tests/, src/, .github/)
 uv sync --group dev
 uv run ruff check tests src .github
 uv run pytest -q
 uv run python -m bot.secret_health --max-codex-age-days 7
 uv run python -m bot.allowlist check-repo owner/repo-a
+
+# Webhook worker (workers/github-webhook/) — separate uv project
+uv run --project workers/github-webhook python -m pytest -q workers/github-webhook/tests
+uv run --project workers/github-webhook ruff check workers/github-webhook
 ```
 
 ## Editing Rules

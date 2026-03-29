@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from urllib.parse import urlparse
 
@@ -7,7 +8,7 @@ from js import Object, Response, fetch as js_fetch
 from pyodide.ffi import to_js as _py_to_js
 from workers import WorkerEntrypoint
 
-from github_webhook.config import DISPATCH_WORKFLOW, load_settings
+from github_webhook.config import DISPATCH_WORKFLOW, GITHUB_API_BASE, load_settings
 from github_webhook.dispatch import build_workflow_dispatch_request
 from github_webhook.github_app import build_installation_token_request
 from github_webhook.github_signature import verify_signature
@@ -110,16 +111,47 @@ class Default(WorkerEntrypoint):
             dispatch_request,
             access_token=installation_token,
         )
-        response = await js_fetch(
-            dispatch.url,
-            _to_js(
-                {
-                    "method": "POST",
-                    "headers": dispatch.headers,
-                    "body": dispatch.body,
-                }
+
+        api_headers = {
+            "Accept": "application/vnd.github+json",
+            "Authorization": f"Bearer {installation_token}",
+            "Content-Type": "application/json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        }
+
+        # Fire ACK reaction and workflow dispatch concurrently.
+        pending = [
+            js_fetch(
+                dispatch.url,
+                _to_js(
+                    {
+                        "method": "POST",
+                        "headers": dispatch.headers,
+                        "body": dispatch.body,
+                    }
+                ),
             ),
-        )
+        ]
+        if dispatch_request.reaction_url:
+            pending.append(
+                js_fetch(
+                    f"{GITHUB_API_BASE}{dispatch_request.reaction_url}",
+                    _to_js(
+                        {
+                            "method": "POST",
+                            "headers": api_headers,
+                            "body": json.dumps({"content": "eyes"}),
+                        }
+                    ),
+                ),
+            )
+
+        results = await asyncio.gather(*pending, return_exceptions=True)
+        response = results[0]
+        # Reaction result (results[1]) is best-effort; ignore failures.
+
+        if isinstance(response, BaseException):
+            return _json_response(502, {"error": "workflow_dispatch_failed", "message": str(response)[:500]})
 
         if 200 <= int(response.status) < 300:
             return _json_response(

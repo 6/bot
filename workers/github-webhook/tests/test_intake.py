@@ -46,6 +46,7 @@ def test_extract_dispatch_request_from_pull_request_comment(settings: Settings) 
 
     assert request.request_id == "webhook-abc123"
     assert request.installation_id == 123
+    assert request.reaction_url == "/repos/6/nitrocop/issues/comments/99/reactions"
     dispatched = json.loads(request.payload_json)
     assert dispatched["trigger_kind"] == "mention"
     assert dispatched["prompt_text"] == "please retry with more focus on the failing spec"
@@ -142,6 +143,7 @@ def test_extract_dispatch_request_from_issue_assignment(settings: Settings) -> N
         settings=settings,
     )
 
+    assert request.reaction_url == "/repos/6/nitrocop/issues/17/reactions"
     dispatched = json.loads(request.payload_json)
     assert dispatched["trigger_kind"] == "assignment"
     assert dispatched["subject_kind"] == "issue"

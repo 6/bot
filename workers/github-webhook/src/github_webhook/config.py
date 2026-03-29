@@ -4,7 +4,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 GITHUB_API_BASE = "https://api.github.com"
-DISPATCH_WORKFLOW = "webhook-command.yml"
+DISPATCH_WORKFLOW = "repo-task.yml"
 WORKFLOW_REF = "main"
 
 

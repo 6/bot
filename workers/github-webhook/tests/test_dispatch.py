@@ -23,7 +23,7 @@ def test_build_workflow_dispatch_request_uses_expected_contract() -> None:
 
     built = build_workflow_dispatch_request(settings, request, access_token="token")
 
-    assert built.url == "https://api.github.com/repos/6/bot/actions/workflows/webhook-command.yml/dispatches"
+    assert built.url == "https://api.github.com/repos/6/bot/actions/workflows/repo-task.yml/dispatches"
     assert built.headers["Authorization"] == "Bearer token"
     assert json.loads(built.body) == {
         "ref": "main",
