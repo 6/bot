@@ -25,8 +25,7 @@ The worker currently dispatches to:
 - `webhook-command.yml`
 
 That workflow is the first landing point inside `6/bot`. It validates the request, then:
-- routes issue-driven tasks into `repo-task.yml` inside `6/bot`
-- forwards PR-comment triggers into the source repo's `bot-command.yml` workflow with a GitHub App token
+- routes both issue-driven and PR-comment-driven tasks into `repo-task.yml` inside `6/bot`
 
 For `6/*` repos today, that means:
 - PR comment beginning with `@6` triggers the PR repair path

@@ -24,7 +24,7 @@ This repo does **not** own target-repo orchestration. Each target repo decides:
 - `6/bot` is a **generic executor**, not a reusable workflow library for repo-specific CI.
 - The Cloudflare Worker is the standard external ingress for webhook-driven bot requests.
 - Inside `6/bot`, GitHub Actions still use `workflow_dispatch` as the internal handoff from the Worker into the executor workflows.
-- The webhook landing workflow routes issue-driven tasks into the internal `repo-task.yml` orchestrator and still forwards PR-comment triggers into the source repo's `bot-command.yml` workflow using a GitHub App token.
+- The webhook landing workflow routes both issue-driven and PR-comment-driven tasks into the internal `repo-task.yml` orchestrator.
 - `6/bot` checks that the source repo is explicitly allowlisted, then checks out the target repo at the requested SHA and either runs the selected backend or performs a generic write request with credentials that live only here.
 - Target repos may expose an optional `.github/actions/bot-setup/action.yml` hook for language/toolchain setup. That hook runs inside the target repo checkout, so only allow trusted repos and trusted refs.
 - The remote agent writes runtime artifacts and a patch. The calling repo downloads those artifacts and applies the patch locally.
@@ -140,11 +140,10 @@ High-level flow:
 2. Check the source repo against `config/allowlist.toml`.
 3. Reject non-`6/*` repos.
 4. Record the distilled webhook request in the job summary.
-5. For issue triggers, dispatch the internal `repo-task.yml` workflow with the original payload.
-6. For PR-comment triggers, mint a GitHub App token scoped to the source repo and dispatch the source repo's `bot-command.yml` workflow.
-7. Upload the JSON payload as an artifact for follow-on routing/debugging.
+5. Dispatch the internal `repo-task.yml` workflow with the original payload.
+6. Upload the JSON payload as an artifact for follow-on routing/debugging.
 
-This is the first landing point for the webhook ingress. It should stay generic and delegate repo-specific routing to the source repo.
+This is the first landing point for the webhook ingress. It should stay generic and hand off repo-specific routing to the source repo's `repo_task.py`.
 
 ### `repo-task.yml`
 
@@ -156,12 +155,12 @@ High-level flow:
 3. Mint a source-repo GitHub App token with the permissions needed for repo-owned planning and write-side effects.
 4. Check out the source repo at its default branch.
 5. Run the source repo's `scripts/workflows/repo_task.py route` command.
-6. If the source repo reports `comment_only`, comment on the issue and stop.
+6. If the source repo reports `comment_only`, comment on the issue or pull request and stop.
 7. Optionally run the source repo's `.github/actions/bot-setup/action.yml`.
 8. Initialize the source repo's runtime layout and run its `prepare`, `prepare-agent`, `finalize`, and `cleanup` planner hooks as needed.
 9. Execute generic `bot.repo_write` operations locally and run `.bot/.github/actions/run-agent` when the source repo requests agent execution.
 
-This is the generic internal orchestrator for issue-driven tasks. Repo-specific policy stays in the source repo's `repo_task.py`.
+This is the generic internal orchestrator for webhook-driven tasks. Repo-specific policy stays in the source repo's `repo_task.py`.
 
 ## Source Repo Allowlist
 
@@ -208,9 +207,8 @@ Minimum integration pieces:
 1. Install the GitHub App on the target repo.
 2. Point GitHub App webhooks at the Cloudflare Worker route.
 3. Add a repo-local `scripts/workflows/repo_task.py` planner if the repo wants `6/bot` to own issue-driven orchestration.
-4. Add a repo-local `.github/workflows/bot-command.yml` receiver if the repo still wants PR-comment routing to stay local.
-5. Make the target repo’s trigger routing and trust policy compatible with the Worker’s mention/assignment parser.
-6. Keep repo-specific workflows/scripts responsible for prompt generation, verification, and any follow-on execution after `6/bot` runs.
+4. Make the target repo’s trigger routing and trust policy compatible with the Worker’s mention/assignment parser.
+5. Keep repo-specific scripts responsible for prompt generation, verification, and any follow-on execution after `6/bot` runs.
 
 If the target repo also wants `6/bot` to own privileged publish/mutation steps, add a second bridge for repo-write requests instead of doing those writes locally.
 

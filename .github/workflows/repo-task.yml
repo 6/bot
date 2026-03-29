@@ -138,8 +138,8 @@ jobs:
             --payload-json "$INPUT_PAYLOAD" \
             >> "$GITHUB_OUTPUT"
 
-      - name: Comment when repo task is not dispatchable
-        if: steps.route.outputs.action == 'comment_only'
+      - name: Comment when repo issue task is not dispatchable
+        if: steps.route.outputs.action == 'comment_only' && steps.route.outputs.subject_kind == 'issue'
         env:
           GH_TOKEN: ${{ steps.source-token.outputs.token }}
         run: |
@@ -155,6 +155,26 @@ jobs:
             echo "- Request: ${{ steps.route.outputs.request_url }}" >> "$BODY_FILE"
           fi
           gh issue comment "${{ steps.route.outputs.issue_number }}" \
+            --repo "${{ steps.request.outputs.source_repo }}" \
+            --body-file "$BODY_FILE"
+
+      - name: Comment when repo pull request task is not dispatchable
+        if: steps.route.outputs.action == 'comment_only' && steps.route.outputs.subject_kind == 'pull_request'
+        env:
+          GH_TOKEN: ${{ steps.source-token.outputs.token }}
+        run: |
+          BODY_FILE="$RUNNER_TEMP/repo-task-not-started.md"
+          cat > "$BODY_FILE" <<EOF
+          ## Bot task not started
+
+          - Reason: ${{ steps.route.outputs.reason }}
+          - Requested by: @${{ steps.route.outputs.requested_by }}
+          - Trigger: ${{ steps.route.outputs.trigger_summary }}
+          EOF
+          if [ -n "${{ steps.route.outputs.request_url }}" ]; then
+            echo "- Request: ${{ steps.route.outputs.request_url }}" >> "$BODY_FILE"
+          fi
+          gh pr comment "${{ steps.route.outputs.issue_number }}" \
             --repo "${{ steps.request.outputs.source_repo }}" \
             --body-file "$BODY_FILE"
 
@@ -199,7 +219,7 @@ jobs:
             >> "$GITHUB_OUTPUT"
 
       - name: Execute skip request
-        if: steps.prepare.outputs.mode == 'skip'
+        if: steps.prepare.outputs.mode == 'skip' && steps.prepare.outputs.request_file != ''
         id: skip
         env:
           GH_TOKEN: ${{ steps.source-token.outputs.token }}
