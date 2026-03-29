@@ -12,8 +12,8 @@ This repo is intentionally small. It owns:
 - remote artifact handoff back to the calling repo
 - webhook ingress for mention- and assignment-driven bot triggers
 
-This repo does **not** own target-repo orchestration. Each target repo decides:
-- when to run an agent
+This repo does **not** own target-repo policy. Each target repo decides:
+- how webhook triggers map to tasks
 - which refs are trusted
 - what prompt to send
 - what setup is needed before agent execution
@@ -21,7 +21,7 @@ This repo does **not** own target-repo orchestration. Each target repo decides:
 
 ## Mental Model
 
-- `6/bot` is a **generic executor**, not a reusable workflow library for repo-specific CI.
+- `6/bot` is a **generic control plane**, not a repo-specific workflow library.
 - The Cloudflare Worker is the standard external ingress for webhook-driven bot requests.
 - Inside `6/bot`, GitHub Actions still use `workflow_dispatch` as the internal handoff from the Worker into the executor workflows.
 - The webhook landing workflow routes both issue-driven and PR-comment-driven tasks into the internal `repo-task.yml` orchestrator.
@@ -200,17 +200,17 @@ The resolver is responsible for:
 
 ## How A Target Repo Integrates
 
-The target repo should keep its own orchestration and use `6/bot` only for privileged execution and publish steps.
+The target repo should keep its own planner and policy code and use `6/bot` for the generic orchestration shell, privileged execution, and publish steps.
 
 Minimum integration pieces:
 
 1. Install the GitHub App on the target repo.
 2. Point GitHub App webhooks at the Cloudflare Worker route.
-3. Add a repo-local `scripts/workflows/repo_task.py` planner if the repo wants `6/bot` to own issue-driven orchestration.
+3. Add a repo-local `scripts/workflows/repo_task.py` planner if the repo wants `6/bot` to own webhook-driven orchestration.
 4. Make the target repo’s trigger routing and trust policy compatible with the Worker’s mention/assignment parser.
-5. Keep repo-specific scripts responsible for prompt generation, verification, and any follow-on execution after `6/bot` runs.
+5. Keep repo-specific scripts responsible for routing, prompt generation, verification, and any repo-local policy after `6/bot` starts the task.
 
-If the target repo also wants `6/bot` to own privileged publish/mutation steps, add a second bridge for repo-write requests instead of doing those writes locally.
+`repo_task.py` may emit generic `bot.repo_write` operations for `6/bot` to execute. Keep privileged writes out of the source repo unless they are intentionally outside this control-plane model.
 
 ### Dispatch inputs
 
@@ -282,7 +282,7 @@ When integrating a new repo:
 - keep the webhook ingress centralized; do not add new direct-dispatch tokens to source repos
 - gate dispatch on trusted refs before contacting `6/bot`
 - avoid dispatching PR head refs from untrusted forks
-- prefer slash-command or maintainer-only triggers over broad public comment triggers
+- prefer maintainer-only mention/assignment triggers over broad public comment triggers
 - keep the target repo’s setup hook deterministic and non-interactive
 - keep webhook signature validation in the Worker, not in GitHub Actions
 - let the Worker dispatch only into generic `6/bot` entrypoints
