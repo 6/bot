@@ -77,6 +77,50 @@ Keep GHA workflows, replace hosted runners with always-on self-hosted ones.
 | Fly      | <2s         | Days   | Medium      | No — must build      |
 | Self-hosted runners | <30s | Days | High     | Yes — native         |
 
+## Agent Server Protocols
+
+Some CLIs offer persistent/programmatic modes that eliminate process
+cold-start on top of the platform-level gains above. See
+[app-server.md](app-server.md) for details on the Codex App Server,
+Claude Agent SDK, and the auth constraints (notably: the Agent SDK
+does not support OAuth tokens / bounded monthly pricing).
+
+## Recommendation
+
+These two docs address different layers of the same problem:
+
+- **This doc** (`fast-execution.md`) is the **platform** question —
+  where does compute run? GHA is slow because of scheduling queues and
+  ephemeral runners. Persistent compute (Sprites, Fly, Modal) gives
+  <2s wake-up. This is the bigger win and is backend-agnostic.
+
+- **[app-server.md](app-server.md)** is the **protocol** question —
+  how do you talk to the agent once compute is ready? You can shell out
+  to the CLI (`codex exec`, `claude -p`) or use a native protocol
+  (Codex app server, Claude Agent SDK). This shaves another 1-3s and
+  adds session resumption, but it's an optimization on top.
+
+The practical sequence:
+
+1. **Platform first.** Pick persistent compute (Fly or Sprites look
+   strongest). Run raw CLIs. This alone gets from ~2-4 min to ~3-5s.
+   Backend-agnostic, no auth changes.
+
+2. **Codex app server second.** Once persistent compute exists,
+   upgrading Codex to the app server protocol is a clear win — <1s
+   task start, native sandboxing, session resumption. No auth
+   constraint.
+
+3. **Claude stays as CLI.** The OAuth pricing constraint means the
+   Agent SDK isn't usable for the `claude-oauth-*` backends (see
+   [app-server.md](app-server.md)). `claude -p` with
+   `CLAUDE_CODE_OAUTH_TOKEN` on persistent compute is ~3-5s and
+   preserves bounded monthly pricing. If Anthropic lifts the OAuth
+   restriction on the SDK later, upgrade then.
+
+**Bottom line:** platform migration is the 80/20 move. The app server
+protocol is a nice-to-have for Codex, and blocked for Claude OAuth.
+
 ## Suggested Migration Path
 
 1. **Prototype** one platform (Sprites or Modal) for a single source repo.
