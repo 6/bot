@@ -122,15 +122,6 @@ Current checks:
 - `uv run ruff check tests src .github`
 - `uv run pytest -q`
 
-### `secret-health.yml`
-
-Runs:
-- on schedule
-- on manual dispatch
-- when `.github/workflows/secret-health.yml` itself changes on `main`
-
-It validates presence/shape of the repo credentials and should be the place to grow future provider-specific health probes.
-
 ### `webhook-command.yml` (legacy, not in hot path)
 
 Triggered by `workflow_dispatch` with inputs `request_id`, `source_repo`, and `payload` (JSON).
